@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
@@ -17,6 +18,7 @@ import javax.sql.DataSource
     properties = ["spring.datasource.url=jdbc:h2:mem:repository-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1"],
 )
 @ActiveProfiles("test")
+@Transactional
 class ExposedTodoRepositoryTest {
     @Autowired
     private lateinit var repository: TodoRepository

@@ -32,20 +32,35 @@ JDK 25와 Gradle 9.3.0 Wrapper인 `./gradlew`를 사용한다. REST Docs는 4.0.
 ## 기능 추가 순서
 
 1. `domain`에 비즈니스 규칙을 작성한다. 이 계층에는 Spring, Exposed, HTTP 의존성을 넣지 않는다.
-2. `application/port/input`에 유스케이스 계약, `application/port/output`에 필요한 외부 의존성 계약을 추가한다.
-3. `application/service`에서 유스케이스를 구현한다. DB를 직접 호출하지 않고 출력 포트를 사용한다.
+2. `application/port/input`에 유스케이스 계약, `application/port/output`에 필요한 외부 의존성 계약을 추가한다. 포트도 Spring·Exposed에 의존하지 않는다.
+3. `application/service`에서 유스케이스를 구현한다. DB는 출력 포트로 호출하고 업무 단위 트랜잭션은 Spring `@Transactional`로 선언한다. Spring 의존성은 `org.springframework.transaction.annotation`의 `Transactional`과 선언 옵션 타입 `Propagation`·`Isolation` 세 타입만 허용한다.
 4. `adapter/inbound/web`에서 요청·응답 변환과 입력 검증을 구현하고 `adapter/outbound/persistence`에서 저장을 구현한다.
 5. `config`에서 구현체를 연결한다. 새 입력 유스케이스와 출력 어댑터의 계약을 테스트한다.
 
-Exposed의 행, 테이블, 트랜잭션 타입을 도메인이나 포트로 반환하지 않는다. 도메인 모델로 변환한 뒤 어댑터 밖으로 전달한다. 여러 저장 작업이 하나의 원자적 연산이어야 한다면 필요한 트랜잭션 경계를 먼저 정하고 중간 실패 시 전체 롤백되는 통합 테스트를 추가한다. 저장소별 트랜잭션을 순차 호출하는 것만으로 여러 변경의 원자성이 보장되지 않는다.
+Exposed의 행, 테이블, 트랜잭션 타입을 도메인이나 포트로 반환하지 않는다. 도메인 모델로 변환한 뒤 어댑터 밖으로 전달한다.
 
 운영 코드의 주입은 생성자 `private val`로 한다. 함수 크기·인자·중첩·이름·금지 문법과 좁은 예외는 [코드 품질 규칙](code-quality.md)을 따른다. 제한을 맞추기 위해 의미 없는 함수나 인자 묶음 객체를 만들지 않는다.
 
 가상 스레드는 JDBC의 블로킹 작업을 처리하는 실행 방식이다. DB 연결 풀을 무한히 늘리지 않으며, 트래픽에 맞는 연결 풀 크기와 쿼리 성능은 별도로 조정해야 한다.
 
+## 트랜잭션
+
+`exposed-spring-boot4-starter:1.5.0`의 자동 설정이 Spring 7용 Exposed `SpringTransactionManager`를 `springTransactionManager` 빈으로 등록한다. 애플리케이션의 `Database`와 트랜잭션 매니저를 별도로 중복 구성하지 않는다. 저장소는 `transaction {}` 없이 Exposed DSL을 사용해 유스케이스의 트랜잭션에 참여한다. [Exposed Spring 통합](https://www.jetbrains.com/help/exposed/spring-boot-integration.html)
+
+`TodoService`의 기본값은 `@Transactional(readOnly = true)`다. `create`와 `complete`는 메서드의 `@Transactional`로 쓰기를 허용하며, `complete`의 조회와 저장은 같은 트랜잭션에서 실행한다. 기본 전파 방식 `REQUIRED`는 이미 열린 트랜잭션이 있으면 참여한다.
+
+- **관리되는 빈을 호출한다.** `config`의 `@Bean`으로 조립된 유스케이스를 주입받아 호출한다. 직접 만든 객체나 같은 객체 내부 호출은 프록시를 통과하지 않아 새 트랜잭션 경계를 만들지 않는다. [Spring 프록시 동작](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html)
+- **읽기 전용은 접근 제어가 아니다.** `readOnly`는 DB·드라이버에 전달하는 힌트다. 데이터 변경을 막는 보안 장치로 사용하지 않는다.
+- **롤백 조건을 명시한다.** 기본 정책은 `RuntimeException`과 `Error`를 롤백한다. SQL 오류가 아닌 checked 예외도 롤백해야 한다면 `rollbackFor`로 계약을 명시하고 테스트한다. Kotlin이 checked 예외 선언을 강제하지 않아도 이 구분은 유지된다. [Spring 롤백 규칙](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/rolling-back.html)
+- **같은 스레드에서 완료한다.** JDBC 트랜잭션 안에서 비동기 실행이나 코루틴 디스패처 전환으로 작업을 넘기지 않는다. 가상 스레드를 사용해도 Spring의 JDBC 트랜잭션은 실행 스레드에 연결된다.
+
+여러 변경이 하나의 업무라면 유스케이스의 트랜잭션 경계 안에 두고 실제 DB의 커밋·중간 실패 시 전체 롤백을 통합 테스트한다. 테스트 자체의 자동 롤백으로 결과를 가리지 않고 새 트랜잭션에서 저장 상태를 확인한다. 유스케이스에 트랜잭션 매니저나 `TransactionTemplate`을 주입하거나 별도 데코레이터를 추가할 필요는 없다.
+
 ## 스키마 변경
 
 `src/main/resources/db/migration`에 `V2__describe_change.sql`처럼 다음 버전의 Flyway SQL을 추가한다. 이미 배포된 버전의 파일을 수정하면 체크섬 검증에 실패하므로 새 마이그레이션으로 변경한다.
+
+스키마는 Flyway만 관리한다. Exposed 스타터의 자동 DDL 생성을 끄는 `spring.exposed.generate-ddl=false`를 유지한다.
 
 기본 통합 테스트는 H2에서 실행한다. PostgreSQL 전용 SQL, 인덱스, 타입, 잠금 동작을 추가하면 PostgreSQL에서도 해당 변경을 검증한다. H2 테스트 통과만으로 PostgreSQL 호환성이 보장되지는 않는다.
 

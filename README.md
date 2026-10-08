@@ -61,7 +61,9 @@ quality-rules/                 # 빌드 전용 detekt 확장 규칙
 .github/workflows/             # PR 검사와 배포
 ```
 
-의존 방향은 `adapter → application → domain`이다. 도메인과 유스케이스는 Spring·Exposed·HTTP 타입을 알지 못한다. JDBC 기반 MVC에 가상 스레드를 활성화하고 정상 종료, 상태 확인, 운영용 PostgreSQL 프로필을 제공한다.
+의존 방향은 `adapter → application → domain`이다. 도메인과 포트는 Spring·Exposed·HTTP에 의존하지 않는다. 유스케이스 구현은 Spring의 `@Transactional`로 업무 단위 트랜잭션을 선언하고, Exposed Spring Boot 4 스타터가 이를 관리한다. 저장소 어댑터의 쿼리는 이 트랜잭션에 참여한다.
+
+JDBC 기반 MVC에 가상 스레드를 활성화하고 정상 종료, 상태 확인, 운영용 PostgreSQL 프로필을 제공한다. 트랜잭션 선언과 테스트 방법은 [개발 가이드](docs/development.md#트랜잭션)를 참고한다.
 
 `quality-rules`는 중첩 깊이, 변경 가능한 컬렉션 노출, 함수 80줄 상한을 검사하는 detekt 플러그인이다. detekt가 분석 전에 규칙 JAR를 읽을 수 있도록 별도 Gradle 모듈로 컴파일한다. 애플리케이션 계층을 나눈 모듈이 아니며 실행 JAR에는 포함하지 않는다. [검사 범위](docs/code-quality.md#검사-도구와-실행)를 참고한다.
 

@@ -13,14 +13,18 @@
 의존 방향은 `adapter → application → domain`이다.
 
 - `domain`: 순수 Kotlin 모델과 비즈니스 규칙. Spring, Exposed, HTTP, DB 타입을 참조하지 않는다.
-- `application/port/input`: 외부에 제공하는 유스케이스 계약.
-- `application/port/output`: 유스케이스가 필요로 하는 저장소 등의 계약.
-- `application/service`: 유스케이스 구현. 외부 기능은 출력 포트로만 호출한다.
+- `application/port/input`: 외부에 제공하는 유스케이스 계약. Spring·Exposed에 의존하지 않는다.
+- `application/port/output`: 유스케이스가 필요로 하는 저장소 등의 계약. Spring·Exposed에 의존하지 않는다.
+- `application/service`: 유스케이스 구현. 외부 기능은 출력 포트로 호출한다. Spring 의존성은 `org.springframework.transaction.annotation`의 `Transactional`과 선언 옵션 타입 `Propagation`·`Isolation`만 허용한다.
 - `adapter/inbound/web`: HTTP 입출력, 요청 검증, 상태 코드, 오류 응답 변환.
-- `adapter/outbound/persistence`: Exposed 매핑, 쿼리, 트랜잭션. Exposed 타입을 포트나 도메인에 노출하지 않는다.
+- `adapter/outbound/persistence`: Exposed 매핑과 쿼리. 유스케이스의 Spring 트랜잭션에 참여하며 Exposed 타입을 포트나 도메인에 노출하지 않는다.
 - `config`: Spring 빈 조립과 기술 설정. 어댑터 간 직접 호출을 만들지 않는다.
 
-Spring의 컴포넌트 스캔에 의존하도록 도메인이나 유스케이스에 애너테이션을 추가하지 않는다. 조립은 설정 클래스에서 한다. JDBC와 Exposed의 블로킹 호출은 가상 스레드를 사용하는 MVC 흐름에서 실행하며, 불필요하게 코루틴이나 WebFlux를 혼합하지 않는다.
+빈 조립은 `config`의 `@Bean`으로 한다. 유스케이스에 `@Service`·`@Component`, `TransactionTemplate`·트랜잭션 매니저 의존성을 추가하지 않는다. `@Transactional`은 Spring이 관리하는 빈의 외부 호출에 적용되며 같은 객체 내부 호출은 새 경계를 만들지 않는다.
+
+웹·저장소 어댑터의 클래스와 메서드에는 `@Transactional`을 붙이지 않는다. 아키텍처 테스트는 합성 애너테이션과 상위 클래스·인터페이스에서 상속한 트랜잭션 선언도 금지한다.
+
+트랜잭션은 Exposed Spring Boot 4 스타터의 매니저를 사용한다. 저장소에 `transaction {}`를 다시 넣거나 별도 트랜잭션 데코레이터·공통 추상화를 만들지 않는다. JDBC 트랜잭션 안에서 비동기 작업·코루틴으로 스레드를 전환하지 않는다. 자세한 롤백·읽기 전용 규칙은 [개발 가이드](docs/development.md#트랜잭션)를 따른다.
 
 운영 코드의 의존성은 생성자 `private val`로 주입한다. 필드·세터 주입, 포트에서 서비스 구현 참조, 도메인·애플리케이션에서 JDBC·파일·네트워크 직접 접근을 만들지 않는다. 새 클래스를 검사 대상 패키지 밖에 두어 아키텍처 검사를 피하지 않는다.
 
@@ -41,8 +45,8 @@ Spring의 컴포넌트 스캔에 의존하도록 도메인이나 유스케이스
 1. 비즈니스 규칙을 도메인에 작성하고 필요한 단위 테스트를 추가한다.
 2. 입력/출력 포트와 유스케이스를 변경한다. 단순한 기능에 미래 확장을 위한 계층을 더하지 않는다.
 3. 웹/저장소 어댑터를 구현한다. API 계약을 변경하면 REST Docs 테스트도 함께 변경한다.
-4. 스키마 변경은 `src/main/resources/db/migration`에 새 Flyway 마이그레이션을 추가한다. 이미 배포된 마이그레이션 파일은 수정하지 않는다.
-   여러 저장 작업이 하나의 업무라면 트랜잭션 경계를 설계하고 중간 실패 시 전체 롤백되는 통합 테스트를 추가한다. 저장소별 트랜잭션만으로 여러 변경의 원자성을 주장하지 않는다.
+4. 스키마 변경은 `src/main/resources/db/migration`에 새 Flyway 마이그레이션을 추가한다. 이미 배포된 마이그레이션 파일은 수정하지 않으며 `spring.exposed.generate-ddl=false`를 유지한다.
+   여러 저장 작업이 하나의 업무라면 유스케이스의 `@Transactional` 경계 안에 두고 실제 커밋·중간 실패 시 전체 롤백을 통합 테스트한다. 모의 저장소나 테스트 자체의 자동 롤백만으로 원자성을 주장하지 않는다.
 5. 변경 범위에 맞는 검증을 실행하고 마지막에 `./gradlew build`로 통합 확인한다.
 6. 가능하면 구현자와 다른 에이전트가 아키텍처 경계, 실패 경로, 배포 계약을 검토한다.
 

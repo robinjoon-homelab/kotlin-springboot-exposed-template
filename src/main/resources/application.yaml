@@ -16,6 +16,8 @@ spring:
       connection-timeout: 30000
   flyway:
     enabled: true
+  exposed:
+    generate-ddl: false
   mvc:
     problemdetails:
       enabled: true

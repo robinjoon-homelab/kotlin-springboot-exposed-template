@@ -1,11 +1,14 @@
 package com.example.template.architecture
 
 import com.tngtech.archunit.base.DescribedPredicate
+import com.tngtech.archunit.core.domain.Dependency
 import com.tngtech.archunit.core.domain.JavaClass
+import com.tngtech.archunit.core.domain.properties.CanBeAnnotated
 import com.tngtech.archunit.lang.ArchCondition
 import com.tngtech.archunit.lang.ArchRule
 import com.tngtech.archunit.lang.ConditionEvents
 import com.tngtech.archunit.lang.SimpleConditionEvent
+import com.tngtech.archunit.lang.conditions.ArchConditions.onlyHaveDependenciesWhere
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses
 import com.tngtech.archunit.library.dependencies.SliceAssignment
@@ -26,6 +29,15 @@ internal class ArchitectureRules(
             "config",
         )
 
+    private val allowedApplicationTypes =
+        JavaClass.Predicates.resideInAnyPackage(
+            "java..",
+            "kotlin..",
+            "org.jetbrains.annotations..",
+            "$root.domain..",
+            "$root.application..",
+        )
+
     val approvedLocations: ArchRule =
         classes().should(satisfy("belong to an approved production package or bootstrap class", ::hasApprovedLocation))
 
@@ -41,9 +53,14 @@ internal class ArchitectureRules(
         classes()
             .that()
             .resideInAPackage("$root.application..")
-            .should()
-            .onlyDependOnClassesThat()
-            .resideInAnyPackage("java..", "kotlin..", "org.jetbrains.annotations..", "$root.domain..", "$root.application..")
+            .should(
+                onlyHaveDependenciesWhere(
+                    DescribedPredicate.describe(
+                        "target the language, domain, application, or service-owned declarative transaction types",
+                        ::isAllowedApplicationDependency,
+                    ),
+                ),
+            )
 
     val noCoreIo: ArchRule =
         noClasses()
@@ -85,6 +102,12 @@ internal class ArchitectureRules(
                 "$root.application.service..",
                 "$root.config..",
             )
+
+    val adapterTransactions: ArchRule =
+        classes()
+            .that()
+            .resideInAnyPackage("$root.adapter.inbound.web..", "$root.adapter.outbound.persistence..")
+            .should(satisfy("not declare transactions on classes or methods, including inherited declarations", ::hasNoAdapterTransactions))
 
     val portContracts: ArchRule =
         classes()
@@ -156,6 +179,7 @@ internal class ArchitectureRules(
             independentPorts,
             inboundBoundary,
             outboundBoundary,
+            adapterTransactions,
             portContracts,
             constructorInjection,
             controllerRoles,
@@ -170,6 +194,10 @@ internal class ArchitectureRules(
         type.name in setOf("$root.TemplateApplication", "$root.TemplateApplicationKt") ||
             layers.any { within(type, it) }
 
+    private fun isAllowedApplicationDependency(dependency: Dependency): Boolean =
+        allowedApplicationTypes.test(dependency.targetClass) ||
+            (within(dependency.originClass, "application.service") && dependency.targetClass.name in declarativeTransactionTypes)
+
     private fun hasPortRoleName(type: JavaClass): Boolean = listOf("UseCase", "Repository", "Port").any(type.simpleName::endsWith)
 
     private fun isController(type: JavaClass): Boolean =
@@ -183,6 +211,13 @@ internal class ArchitectureRules(
         (type.fields + type.methods).none { member ->
             injectionAnnotations.any { member.isAnnotatedWith(it) || member.isMetaAnnotatedWith(it) }
         }
+
+    private fun hasNoAdapterTransactions(type: JavaClass): Boolean =
+        (type.classHierarchy + type.allRawInterfaces).none(::hasTransactionAnnotation) &&
+            type.allMethods.none(::hasTransactionAnnotation)
+
+    private fun hasTransactionAnnotation(element: CanBeAnnotated): Boolean =
+        element.isAnnotatedWith(TRANSACTIONAL) || element.isMetaAnnotatedWith(TRANSACTIONAL)
 
     private fun isConfiguration(type: JavaClass): Boolean = type.isAnnotatedWith(CONFIGURATION) || type.isMetaAnnotatedWith(CONFIGURATION)
 
@@ -220,6 +255,13 @@ internal class ArchitectureRules(
         private const val CONTROLLER = "org.springframework.stereotype.Controller"
         private const val CONFIGURATION = "org.springframework.context.annotation.Configuration"
         private const val SPRING_BOOT_APPLICATION = "org.springframework.boot.autoconfigure.SpringBootApplication"
+        private const val TRANSACTIONAL = "org.springframework.transaction.annotation.Transactional"
+        private val declarativeTransactionTypes =
+            setOf(
+                TRANSACTIONAL,
+                "org.springframework.transaction.annotation.Propagation",
+                "org.springframework.transaction.annotation.Isolation",
+            )
         private val injectionAnnotations =
             listOf(
                 "org.springframework.beans.factory.annotation.Autowired",

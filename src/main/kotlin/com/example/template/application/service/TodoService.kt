@@ -4,14 +4,17 @@ import com.example.template.application.port.input.TodoNotFoundException
 import com.example.template.application.port.input.TodoUseCase
 import com.example.template.application.port.output.TodoRepository
 import com.example.template.domain.Todo
+import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
 
+@Transactional(readOnly = true)
 class TodoService(
     private val repository: TodoRepository,
     private val clock: Clock,
 ) : TodoUseCase {
+    @Transactional
     override fun create(title: String): Todo =
         repository.save(
             Todo(
@@ -25,5 +28,6 @@ class TodoService(
 
     override fun list(): List<Todo> = repository.findAll()
 
+    @Transactional
     override fun complete(id: UUID): Todo = repository.save(get(id).complete())
 }
