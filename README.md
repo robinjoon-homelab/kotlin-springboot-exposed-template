@@ -63,6 +63,8 @@ quality-rules/                 # 빌드 전용 detekt 확장 규칙
 
 의존 방향은 `adapter → application → domain`이다. 도메인과 포트는 Spring·Exposed·HTTP에 의존하지 않는다. 유스케이스 구현은 Spring의 `@Transactional`로 업무 단위 트랜잭션을 선언하고, Exposed Spring Boot 4 스타터가 이를 관리한다. 저장소 어댑터의 쿼리는 이 트랜잭션에 참여한다.
 
+위 트리는 예제 구조다. `application.model`, 새 입력·출력 어댑터 그룹, `billing.orders.application...` 같은 기능 우선 구조도 공통 검사로 지원한다. 포트의 역할 경로와 구현 경로를 맞추고, 서로 다른 어댑터 그룹은 격리한다. [하위 패키지 규약](docs/code-quality.md#하위-패키지와-기능-경계)을 따른다.
+
 JDBC 기반 MVC에 가상 스레드를 활성화하고 정상 종료, 상태 확인, 운영용 PostgreSQL 프로필을 제공한다. 트랜잭션 선언과 테스트 방법은 [개발 가이드](docs/development.md#트랜잭션)를 참고한다.
 
 `quality-rules`는 중첩 깊이, 변경 가능한 컬렉션 노출, 함수 80줄 상한을 검사하는 detekt 플러그인이다. detekt가 분석 전에 규칙 JAR를 읽을 수 있도록 별도 Gradle 모듈로 컴파일한다. 애플리케이션 계층을 나눈 모듈이 아니며 실행 JAR에는 포함하지 않는다. [검사 범위](docs/code-quality.md#검사-도구와-실행)를 참고한다.
@@ -76,7 +78,7 @@ JDBC 기반 MVC에 가상 스레드를 활성화하고 정상 종료, 상태 확
 
 이 공개 템플릿의 원본 저장소는 CI 검증만 실행하고 배포하지 않는다. 워크플로가 GitHub의 `is_template` 설정을 확인하므로, **생성한 서비스 저장소는 Template repository 설정을 켜지 않는다.**
 
-PR 검사는 **PR 소스 저장소의 head 커밋**을 체크아웃해 실행한다. 템플릿에서 생성한 서비스 저장소의 `main` 또는 `master`에 푸시되면 검증 후 이미지를 빌드하고 홈랩에 배포한다. **저장소별 Secrets/Variables 입력은 필요 없지만, 새 저장소의 SMS 허용 목록 등록은 플랫폼 운영자가 먼저 완료해야 한다.** 이름 생성 규칙과 전체 사전조건은 [배포 가이드](docs/deployment.md)에 있다.
+PR 검사는 **PR 소스 저장소의 head 커밋**을 체크아웃해 실행한다. 서비스 저장소의 `main`·`master` 푸시 또는 해당 브랜치의 수동 실행은 검증 후 홈랩에 배포한다. **GitHub Variables로 앱 이름·레지스트리 주소·이미지 경로를 지정하고, 플랫폼 운영자가 SMS 허용 목록을 먼저 등록한다.** 지정한 워크로드가 없으면 최초 생성하며, 이미 있으면 기존 DB·도메인·환경변수를 보존하고 이미지 태그만 바꾼다. 설정과 사전조건은 [배포 가이드](docs/deployment.md)에 있다.
 
 ## 개발과 AI 에이전트
 

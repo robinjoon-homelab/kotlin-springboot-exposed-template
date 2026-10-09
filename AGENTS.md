@@ -15,14 +15,17 @@
 - `domain`: 순수 Kotlin 모델과 비즈니스 규칙. Spring, Exposed, HTTP, DB 타입을 참조하지 않는다.
 - `application/port/input`: 외부에 제공하는 유스케이스 계약. Spring·Exposed에 의존하지 않는다.
 - `application/port/output`: 유스케이스가 필요로 하는 저장소 등의 계약. Spring·Exposed에 의존하지 않는다.
+- `application/model`: 유스케이스의 순수 데이터 계약. 언어 기본 타입·도메인·다른 애플리케이션 모델만 참조한다.
 - `application/service`: 유스케이스 구현. 외부 기능은 출력 포트로 호출한다. Spring 의존성은 `org.springframework.transaction.annotation`의 `Transactional`과 선언 옵션 타입 `Propagation`·`Isolation`만 허용한다.
 - `adapter/inbound/web`: HTTP 입출력, 요청 검증, 상태 코드, 오류 응답 변환.
 - `adapter/outbound/persistence`: Exposed 매핑과 쿼리. 유스케이스의 Spring 트랜잭션에 참여하며 Exposed 타입을 포트나 도메인에 노출하지 않는다.
 - `config`: Spring 빈 조립과 기술 설정. 어댑터 간 직접 호출을 만들지 않는다.
 
+계층 앞에 `billing.orders` 같은 기능 경로를 둘 수 있고 각 계층 아래에도 역할·구현 하위 패키지를 둘 수 있다. 포트 역할의 전체 경로는 구현 경로에 연속된 패키지 세그먼트로 포함되어야 한다. 예를 들어 `application.port.output.payment.refund`는 `adapter.outbound.stripe.payment.refund` 또는 `adapter.outbound.payment.refund.stripe`에서 구현할 수 있다. 기능 경로가 다른 포트를 구현하지 않으며 루트의 공용 포트는 기능별 구현에서 사용할 수 있다. 세부 규약과 격리 단위는 [패키지 경계](docs/code-quality.md#하위-패키지와-기능-경계)를 따른다.
+
 빈 조립은 `config`의 `@Bean`으로 한다. 유스케이스에 `@Service`·`@Component`, `TransactionTemplate`·트랜잭션 매니저 의존성을 추가하지 않는다. `@Transactional`은 Spring이 관리하는 빈의 외부 호출에 적용되며 같은 객체 내부 호출은 새 경계를 만들지 않는다.
 
-웹·저장소 어댑터의 클래스와 메서드에는 `@Transactional`을 붙이지 않는다. 아키텍처 테스트는 합성 애너테이션과 상위 클래스·인터페이스에서 상속한 트랜잭션 선언도 금지한다.
+모든 입력·출력 어댑터의 클래스와 메서드에는 `@Transactional`을 붙이지 않는다. 아키텍처 테스트는 합성 애너테이션과 상위 클래스·인터페이스에서 상속한 트랜잭션 선언도 금지하며, 어댑터의 트랜잭션 매니저·수동 트랜잭션 사용도 차단한다.
 
 트랜잭션은 Exposed Spring Boot 4 스타터의 매니저를 사용한다. 저장소에 `transaction {}`를 다시 넣거나 별도 트랜잭션 데코레이터·공통 추상화를 만들지 않는다. JDBC 트랜잭션 안에서 비동기 작업·코루틴으로 스레드를 전환하지 않는다. 자세한 롤백·읽기 전용 규칙은 [개발 가이드](docs/development.md#트랜잭션)를 따른다.
 

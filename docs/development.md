@@ -34,7 +34,7 @@ JDK 25와 Gradle 9.3.0 Wrapper인 `./gradlew`를 사용한다. REST Docs는 4.0.
 1. `domain`에 비즈니스 규칙을 작성한다. 이 계층에는 Spring, Exposed, HTTP 의존성을 넣지 않는다.
 2. `application/port/input`에 유스케이스 계약, `application/port/output`에 필요한 외부 의존성 계약을 추가한다. 포트도 Spring·Exposed에 의존하지 않는다.
 3. `application/service`에서 유스케이스를 구현한다. DB는 출력 포트로 호출하고 업무 단위 트랜잭션은 Spring `@Transactional`로 선언한다. Spring 의존성은 `org.springframework.transaction.annotation`의 `Transactional`과 선언 옵션 타입 `Propagation`·`Isolation` 세 타입만 허용한다.
-4. `adapter/inbound/web`에서 요청·응답 변환과 입력 검증을 구현하고 `adapter/outbound/persistence`에서 저장을 구현한다.
+4. `adapter/inbound/<group>`에서 진입점과 입력 검증을, `adapter/outbound/<group>`에서 외부 기능을 구현한다. HTTP 예제는 `web`, Exposed 예제는 `persistence` 그룹을 사용한다. 기능 경로와 포트 역할 경로는 [패키지 경계](code-quality.md#하위-패키지와-기능-경계)에 맞춘다.
 5. `config`에서 구현체를 연결한다. 새 입력 유스케이스와 출력 어댑터의 계약을 테스트한다.
 
 Exposed의 행, 테이블, 트랜잭션 타입을 도메인이나 포트로 반환하지 않는다. 도메인 모델로 변환한 뒤 어댑터 밖으로 전달한다.
