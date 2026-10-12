@@ -2,7 +2,7 @@
 
 ## 먼저 확인할 것
 
-- [README.md](README.md), [코드 품질 규칙](docs/code-quality.md), 변경할 코드, 관련 테스트를 먼저 읽는다. 배포 작업은 [docs/deployment.md](docs/deployment.md)도 읽는다.
+- [README.md](README.md), [코드 품질 규칙](docs/code-quality.md), 변경할 코드, 관련 테스트를 먼저 읽는다. 도메인·BC 변경은 [어그리게이트와 BC 경계](docs/ddd-architecture.md), 배포 작업은 [docs/deployment.md](docs/deployment.md)도 읽는다.
 - JDK 25와 저장소의 Gradle Wrapper를 사용한다. 빌드·테스트·detekt에는 Python이 필요하지 않다. 전역 Gradle에 의존하지 않는다.
 - 작업 전에 `git status --short`로 기존 변경을 확인한다. 사용자의 변경을 덮어쓰거나 되돌리지 않는다.
 - 요청을 재현 가능한 완료 조건으로 바꾼다. 필요한 범위만 변경하고 확인하지 않은 동작을 완료했다고 보고하지 않는다.
@@ -21,7 +21,13 @@
 - `adapter/outbound/persistence`: Exposed 매핑과 쿼리. 유스케이스의 Spring 트랜잭션에 참여하며 Exposed 타입을 포트나 도메인에 노출하지 않는다.
 - `config`: Spring 빈 조립과 기술 설정. 어댑터 간 직접 호출을 만들지 않는다.
 
-계층 앞에 `billing.orders` 같은 기능 경로를 둘 수 있고 각 계층 아래에도 역할·구현 하위 패키지를 둘 수 있다. 포트 역할의 전체 경로는 구현 경로에 연속된 패키지 세그먼트로 포함되어야 한다. 예를 들어 `application.port.output.payment.refund`는 `adapter.outbound.stripe.payment.refund` 또는 `adapter.outbound.payment.refund.stripe`에서 구현할 수 있다. 기능 경로가 다른 포트를 구현하지 않으며 루트의 공용 포트는 기능별 구현에서 사용할 수 있다. 세부 규약과 격리 단위는 [패키지 경계](docs/code-quality.md#하위-패키지와-기능-경계)를 따른다.
+공통 검사기는 계층 앞의 `billing.orders` 같은 기능 경로와 계층 아래 역할·구현 하위 패키지를 지원한다. 이 템플릿의 운영 코드는 최상위 업무 패키지 하나를 BC 하나로 등록하고 BC 아래에 다른 기능 경로를 만들지 않는다. 포트 역할의 전체 경로는 구현 경로에 연속된 패키지 세그먼트로 포함되어야 한다. 예를 들어 `application.port.output.payment.refund`는 `adapter.outbound.stripe.payment.refund` 또는 `adapter.outbound.payment.refund.stripe`에서 구현할 수 있다. 기능 경로가 다른 포트를 구현하지 않으며 루트의 공용 포트는 기능별 구현에서 사용할 수 있다. 세부 규약과 격리 단위는 [패키지 경계](docs/code-quality.md#하위-패키지와-기능-경계)를 따른다.
+
+새 기능은 [경계 선정 절차](docs/ddd-architecture.md#새-기능을-분류하는-절차)에 따라 업무 사실, 소유 BC, 불변식·생명주기를 확인한 뒤 구현한다. 새 BC·어그리게이트나 일관성·연동 계약을 바꾸면 선택 근거, 다른 대안을 쓰지 않는 이유, 읽기·쓰기·실패 계약을 변경 설명에 기록한다. 테이블·API·서비스 개수로 경계를 정하거나 부족한 업무 사실을 임의로 채우지 않는다.
+
+다른 BC의 `domain`은 비공개다. `@AggregateRoot`는 `<bc>.domain.<aggregate>`에 하나만 두고 그 하위 패키지는 같은 어그리게이트의 내부로 다룬다. BC의 `domain` 바로 아래에는 의미가 같은 공유 값·예외를 둘 수 있다. 생성자·`copy`는 비공개이며 다른 어그리게이트 루트 객체 대신 ID·불변 값으로 참조한다. 루트를 다루는 출력 포트는 어그리게이트별로 하나만 두며 필요한 조회 모델은 `Store`로 구분한다.
+
+`todo`, `ordering`, `inventory`와 소유 루트는 `HexagonalArchitectureTest.contextAggregates`에 등록한다. 등록하지 않은 업무 기능·루트와 BC 아래의 중첩 기능 경로는 검사에 실패한다. `ordering` 안에 `Offer`와 `Order`를 두며 OrderLine은 Order가 소유하는 값이다. Todo는 간단한 CRUD BC다. 각 BC의 코어는 다른 BC 타입을 직접 참조하지 않으며 자기 저장소·테이블을 사용한다. 루트 공용 `domain`은 `AggregateRoot` 표식만 허용하고 공용 애플리케이션·어댑터는 업무 기능 타입에 의존하지 않는다. 업무 타입을 공용 포트나 함수 값으로 감춰 BC 경계를 우회하지 않는다. BC 간 통신 방식은 정하지 않았으므로 연동 요청에는 데이터 계약·번역·실패 처리·검사를 함께 설계한다.
 
 빈 조립은 `config`의 `@Bean`으로 한다. 유스케이스에 `@Service`·`@Component`, `TransactionTemplate`·트랜잭션 매니저 의존성을 추가하지 않는다. `@Transactional`은 Spring이 관리하는 빈의 외부 호출에 적용되며 같은 객체 내부 호출은 새 경계를 만들지 않는다.
 

@@ -1,7 +1,7 @@
 package com.example.template.config
 
-import com.example.template.adapter.outbound.persistence.ExposedTodoRepository
-import com.example.template.application.port.output.TodoRepository
+import com.example.template.todo.adapter.outbound.persistence.ExposedTodoRepository
+import com.example.template.todo.application.port.output.TodoRepository
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 

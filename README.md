@@ -21,7 +21,27 @@ curl -i http://localhost:8080/api/todos \
 curl http://localhost:8080/api/todos
 ```
 
-Todo 생성·조회·목록·완료 API가 포트와 어댑터의 사용 예제를 제공한다. **예제 API에는 인증·인가가 없다. 공개 배포에서는 샘플 데이터만 사용하고 실제 서비스에는 접근 제어를 추가한다.**
+Todo는 단일 어그리게이트 CRUD BC다. **주문 BC에는 판매품목 Offer와 주문 Order라는 두 어그리게이트**가 있고, 재고 BC는 별도의 실물 보유량 모델을 갖는다. BC와 어그리게이트를 고르는 기준은 [경계 선정 절차](docs/ddd-architecture.md#새-기능을-분류하는-절차)에 있다.
+
+```sh
+curl -i http://localhost:8080/api/offers \
+  -H 'Content-Type: application/json' \
+  -d '{"sku":"BOOK-001"}'
+
+curl -i http://localhost:8080/api/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"lines":[{"sku":"BOOK-001","quantity":3}]}'
+
+curl -i http://localhost:8080/api/inventory/items \
+  -H 'Content-Type: application/json' \
+  -d '{"sku":"BOOK-001","onHand":5}'
+```
+
+주문은 SKU가 서로 다른 **1~10개 품목, 품목별 수량 1~100**을 받는다. 먼저 Offer를 등록해야 하며, Offer 조회 시점에 미등록·판매 중단 품목이 있으면 `409`를 반환한다. 생성 응답은 `201`, 상태는 `PLACED`다. `GET /api/orders/{id}`로 조회하고 `PATCH /api/orders/{id}/cancel`로 취소하며 반복 취소는 같은 상태를 반환한다.
+
+Offer의 UUID로 `PATCH /api/offers/{id}/discontinue`를 호출하면 판매를 중단하지만 기존 주문은 바꾸지 않는다. 조회 직후 판매 중단이 커밋되는 경합에서는 이미 읽은 상태로 주문을 접수할 수 있다. **주문은 재고를 확인하거나 예약하지 않는다.** 재고의 등록·조회·입고는 독립적으로 동작한다. [업무 전제와 판정 시점](docs/ddd-architecture.md#불변식과-주문-시점의-정책)을 참고한다.
+
+**예제 API에는 인증·인가가 없다. 공개 배포에서는 샘플 데이터만 사용하고 실제 서비스에는 접근 제어를 추가한다.**
 
 ## 테스트·코드 품질·API 문서
 
@@ -45,14 +65,10 @@ API 문서는 테스트에서 생성하는 요청·응답 필드와 예제를 �
 
 ```text
 src/main/kotlin/com/example/template/
-├── domain/                    # 순수 Kotlin 모델·규칙
-├── application/
-│   ├── port/input/            # 유스케이스 계약
-│   ├── port/output/           # 외부 의존성 계약
-│   └── service/               # 유스케이스 구현
-├── adapter/
-│   ├── inbound/web/           # HTTP 입출력
-│   └── outbound/persistence/  # Exposed JDBC 저장소
+├── domain/AggregateRoot.kt     # 공용 루트 표식
+├── todo/                      # 할 일 BC: domain/todo + application / adapter
+├── ordering/                  # 주문 BC: domain/order, domain/offer + application / adapter
+├── inventory/                 # 재고 BC: domain/stock + application / adapter
 └── config/                    # Spring 빈 조립
 src/main/resources/db/migration/ # Flyway 마이그레이션
 src/test/                      # 단위·통합·아키텍처 테스트
@@ -63,7 +79,9 @@ quality-rules/                 # 빌드 전용 detekt 확장 규칙
 
 의존 방향은 `adapter → application → domain`이다. 도메인과 포트는 Spring·Exposed·HTTP에 의존하지 않는다. 유스케이스 구현은 Spring의 `@Transactional`로 업무 단위 트랜잭션을 선언하고, Exposed Spring Boot 4 스타터가 이를 관리한다. 저장소 어댑터의 쿼리는 이 트랜잭션에 참여한다.
 
-위 트리는 예제 구조다. `application.model`, 새 입력·출력 어댑터 그룹, `billing.orders.application...` 같은 기능 우선 구조도 공통 검사로 지원한다. 포트의 역할 경로와 구현 경로를 맞추고, 서로 다른 어댑터 그룹은 격리한다. [하위 패키지 규약](docs/code-quality.md#하위-패키지와-기능-경계)을 따른다.
+공통 검사는 계층 우선 구조와 `billing.orders.application...` 같은 기능 우선 구조를 지원한다. 포트의 역할 경로와 구현 경로를 맞추고, 서로 다른 어댑터 그룹은 격리한다. 이 템플릿에는 다른 기능의 도메인 참조와 어그리게이트·저장소 소유권을 제한하는 DDD 검사를 함께 적용한다. [하위 패키지 규약](docs/code-quality.md#하위-패키지와-기능-경계)을 따른다.
+
+`Offer`와 `Order`는 같은 BC에서 독립적인 생명주기를 가진다. `OrderLine`은 Order가 함께 규칙을 지키고 저장하는 값 객체다. `orders`와 `order_lines` 두 테이블이 어그리게이트 하나를 저장하며, 별도 재고 BC의 `StockItem`은 실물 보유량을 관리한다. 각 BC는 자기 모델·저장소·테이블을 소유하며, BC 간 통신 방식은 정하지 않았다. [판단 기준과 새 기능 분류 사례](docs/ddd-architecture.md)를 따른다.
 
 JDBC 기반 MVC에 가상 스레드를 활성화하고 정상 종료, 상태 확인, 운영용 PostgreSQL 프로필을 제공한다. 트랜잭션 선언과 테스트 방법은 [개발 가이드](docs/development.md#트랜잭션)를 참고한다.
 
@@ -83,6 +101,7 @@ PR 검사는 **PR 소스 저장소의 head 커밋**을 체크아웃해 실행한
 ## 개발과 AI 에이전트
 
 - [개발 가이드](docs/development.md): 기능 추가, API 문서 갱신, DB 마이그레이션, 검증 명령.
+- [어그리게이트와 BC 경계](docs/ddd-architecture.md): 예제 경계, 트랜잭션 책임, 자동 검사의 범위와 한계.
 - [코드 품질 규칙](docs/code-quality.md): 함수·이름·문법 제한, 예외 절차, 정적 분석과 GitHub 병합 차단.
 - [배포 가이드](docs/deployment.md): PR 정책, SMS, 컨테이너, 하네스 연동.
 - [AGENTS.md](AGENTS.md): AI 에이전트 공통 지침. Claude와 Copilot용 진입 문서도 포함한다.

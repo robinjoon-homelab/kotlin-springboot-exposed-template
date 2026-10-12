@@ -1,8 +1,9 @@
 package com.example.template.transaction
 
-import com.example.template.application.port.input.TodoUseCase
-import com.example.template.application.port.output.TodoRepository
-import com.example.template.domain.Todo
+import com.example.template.todo.application.port.input.TodoUseCase
+import com.example.template.todo.application.port.output.TodoRepository
+import com.example.template.todo.domain.todo.Todo
+import com.example.template.todo.domain.todo.TodoId
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.test.context.TestConfiguration
@@ -10,7 +11,6 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronizationManager
-import java.util.UUID
 
 @TestConfiguration(proxyBeanMethods = false)
 class TransactionTestConfig {
@@ -44,12 +44,17 @@ class TransactionTestConfig {
     ) : TodoRepository {
         private val recorded = mutableListOf<TransactionObservation>()
 
-        override fun save(todo: Todo): Todo {
-            record("save")
-            return delegate.save(todo)
+        override fun add(todo: Todo): Todo {
+            record("add")
+            return delegate.add(todo)
         }
 
-        override fun findById(id: UUID): Todo? {
+        override fun update(todo: Todo): Todo {
+            record("update")
+            return delegate.update(todo)
+        }
+
+        override fun findById(id: TodoId): Todo? {
             record("findById")
             return delegate.findById(id)
         }

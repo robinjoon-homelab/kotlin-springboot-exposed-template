@@ -1,6 +1,6 @@
 package com.example.template.transaction
 
-import com.example.template.application.port.input.TodoUseCase
+import com.example.template.todo.application.port.input.TodoUseCase
 import com.example.template.transaction.TransactionTestConfig.RecordingTodoRepository
 import com.example.template.transaction.TransactionTestConfig.TransactionScenario
 import org.assertj.core.api.Assertions.assertThat
@@ -71,7 +71,7 @@ class ExposedSpringTransactionTest {
         useCase.create("Committed write")
 
         assertThat(storedTitles()).containsExactly("Committed write")
-        assertWriteTransaction("save")
+        assertWriteTransaction("add")
     }
 
     @Test
@@ -99,7 +99,7 @@ class ExposedSpringTransactionTest {
         val completed = useCase.complete(todo.id)
 
         assertThat(completed.completed).isTrue()
-        assertWriteTransaction("findById", "save")
+        assertWriteTransaction("findById", "update")
         assertThat(storedTitles()).containsExactly(todo.title)
     }
 
@@ -107,7 +107,7 @@ class ExposedSpringTransactionTest {
     fun `required use cases join one outer transaction and commit both writes`() {
         scenario.createTwo()
 
-        assertWriteTransaction("save", "save")
+        assertWriteTransaction("add", "add")
         assertThat(storedTitles()).containsExactly("First write", "Second write")
     }
 
@@ -117,7 +117,7 @@ class ExposedSpringTransactionTest {
             .isInstanceOf(IllegalStateException::class.java)
             .hasMessage("Fail after both writes")
 
-        assertWriteTransaction("save", "save")
+        assertWriteTransaction("add", "add")
         assertThat(storedTitles()).isEmpty()
     }
 

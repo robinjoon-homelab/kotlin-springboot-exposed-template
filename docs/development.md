@@ -18,7 +18,7 @@ JDK 25와 Gradle 9.3.0 Wrapper인 `./gradlew`를 사용한다. REST Docs는 4.0.
 
 ## 예제 API
 
-`Todo`는 UUID 식별자, 제목, 완료 여부, 생성 시각을 가진다. 제목은 공백일 수 없으며 최대 200자다.
+`Todo`는 UUID 식별자, 제목, 완료 여부, 생성 시각을 가진다. 빈 제목과 공백만 있는 제목은 거부하며 최대 200자다.
 
 - `POST /api/todos`: `{"title":"첫 기능 만들기"}`를 받아 `201 Created`와 `Location`을 반환한다.
 - `GET /api/todos/{id}`: 항목을 조회한다. 없으면 `404`를 반환한다.
@@ -27,17 +27,36 @@ JDK 25와 Gradle 9.3.0 Wrapper인 `./gradlew`를 사용한다. REST Docs는 4.0.
 
 정상 응답 필드는 `id`, `title`, `completed`, `createdAt`이다. 잘못된 요청은 `400`, 없는 항목은 `404`를 ProblemDetail 형식으로 반환한다. 정확한 요청·응답 예제는 테스트로 생성한 `/docs/index.html`에서 확인한다.
 
+주문 BC에는 Offer와 Order가 있고 재고 BC에는 StockItem이 있다. 판매 가능 품목과 실물 보유량은 독립적으로 등록한다. 주문은 재고를 조회·확인·예약하지 않는다.
+
+- `POST /api/offers`: `{"sku":"BOOK-001"}`로 `ON_SALE` 판매품목을 등록하고 `201 Created`와 UUID 기반 `Location`을 반환한다. 같은 SKU는 `409`다.
+- `GET /api/offers/{id}`: 판매품목을 조회한다. 미등록 UUID는 `404`다.
+- `PATCH /api/offers/{id}/discontinue`: `DISCONTINUED`로 바꾼다. 반복 중단은 같은 상태를 반환하며 기존 주문을 변경하지 않는다.
+- `POST /api/orders`: `{"lines":[{"sku":"BOOK-001","quantity":3}]}`으로 `PLACED` 주문을 만들고 `201 Created`와 `Location`을 반환한다. 품목은 1~10개, SKU는 주문 안에서 유일하며 수량은 품목별 1~100이다. Offer 조회 시점에 미등록·판매 중단 SKU가 있으면 `409`다.
+- `GET /api/orders/{id}`: 주문을 조회한다. 없으면 `404`를 반환한다.
+- `PATCH /api/orders/{id}/cancel`: 주문을 `CANCELLED`로 바꾸고 `200`을 반환한다. 반복 취소는 같은 상태를 반환한다.
+
+- `POST /api/inventory/items`: `{"sku":"BOOK-001","onHand":5}`로 재고 품목을 등록하고 `201 Created`와 `Location`을 반환한다. 이미 등록한 SKU는 `409`다.
+- `GET /api/inventory/items/{sku}`: 품목을 조회한다. 미등록 SKU는 `404`다.
+- `POST /api/inventory/items/{sku}/restock`: `{"quantity":3}`으로 양수 수량을 입고한다.
+
+주문 응답 필드는 `id`, `lines`(각 품목의 `sku`, `quantity`), `status`, `placedAt`이다. 판매품목은 `id`, `sku`, `status`, 재고는 `sku`, `onHand`를 반환한다. 잘못된 값은 `400`을 ProblemDetail 형식으로 반환한다. 주문의 품목은 접수 후 변경하지 않는다. Offer를 읽은 직후 판매 중단이 커밋돼도 이미 읽은 상태로 주문을 접수하는 경합은 허용한다. 경계와 판정 시점은 [어그리게이트와 BC 경계](ddd-architecture.md)에 있다.
+
 인증·인가와 사용자별 데이터 분리는 이 예제에 포함하지 않는다. 실제 사용자 데이터를 취급하기 전에 서비스의 접근 제어를 구현한다.
 
 ## 기능 추가 순서
 
-1. `domain`에 비즈니스 규칙을 작성한다. 이 계층에는 Spring, Exposed, HTTP 의존성을 넣지 않는다.
+먼저 [경계 선정 절차](ddd-architecture.md#새-기능을-분류하는-절차)로 소유 BC·어그리게이트와 불변식·생명주기를 정한다. 새 경계와 일관성 계약 변경은 판단 근거를 남기며, 명사·테이블·화면 개수로 경계를 추측하지 않는다.
+
+1. `<bc>/domain/<aggregate>`에 비즈니스 규칙을 작성한다. Todo 예제는 `todo/domain/todo`에 있다. 루트는 `@AggregateRoot`로 표시하고 생성·복원·상태 전이를 구분한다. 이 계층에는 Spring, Exposed, HTTP 의존성을 넣지 않는다.
 2. `application/port/input`에 유스케이스 계약, `application/port/output`에 필요한 외부 의존성 계약을 추가한다. 포트도 Spring·Exposed에 의존하지 않는다.
 3. `application/service`에서 유스케이스를 구현한다. DB는 출력 포트로 호출하고 업무 단위 트랜잭션은 Spring `@Transactional`로 선언한다. Spring 의존성은 `org.springframework.transaction.annotation`의 `Transactional`과 선언 옵션 타입 `Propagation`·`Isolation` 세 타입만 허용한다.
 4. `adapter/inbound/<group>`에서 진입점과 입력 검증을, `adapter/outbound/<group>`에서 외부 기능을 구현한다. HTTP 예제는 `web`, Exposed 예제는 `persistence` 그룹을 사용한다. 기능 경로와 포트 역할 경로는 [패키지 경계](code-quality.md#하위-패키지와-기능-경계)에 맞춘다.
-5. `config`에서 구현체를 연결한다. 새 입력 유스케이스와 출력 어댑터의 계약을 테스트한다.
+5. `config`에서 구현체를 연결한다. 새 BC·루트는 `HexagonalArchitectureTest.contextAggregates`와 경계 문서에 등록하고, 입력 유스케이스와 출력 어댑터의 계약을 테스트한다.
 
 Exposed의 행, 테이블, 트랜잭션 타입을 도메인이나 포트로 반환하지 않는다. 도메인 모델로 변환한 뒤 어댑터 밖으로 전달한다.
+
+다른 BC의 도메인·애플리케이션 타입은 코어에서 직접 참조하지 않는다. 같은 BC의 애플리케이션 서비스는 여러 저장소를 사용할 수 있지만, 도메인 모델은 다른 어그리게이트 루트 객체 대신 ID·불변 값으로 참조한다. 루트 공용 도메인에 업무 값을 옮겨 공유하지 않는다. 어그리게이트·출력 포트의 소유권과 자동 검사의 한계는 [DDD 경계](code-quality.md#어그리게이트와-ddd-경계)와 [BC 경계](code-quality.md#bc-경계)를 따른다.
 
 운영 코드의 주입은 생성자 `private val`로 한다. 함수 크기·인자·중첩·이름·금지 문법과 좁은 예외는 [코드 품질 규칙](code-quality.md)을 따른다. 제한을 맞추기 위해 의미 없는 함수나 인자 묶음 객체를 만들지 않는다.
 
@@ -47,18 +66,22 @@ Exposed의 행, 테이블, 트랜잭션 타입을 도메인이나 포트로 반�
 
 `exposed-spring-boot4-starter:1.5.0`의 자동 설정이 Spring 7용 Exposed `SpringTransactionManager`를 `springTransactionManager` 빈으로 등록한다. 애플리케이션의 `Database`와 트랜잭션 매니저를 별도로 중복 구성하지 않는다. 저장소는 `transaction {}` 없이 Exposed DSL을 사용해 유스케이스의 트랜잭션에 참여한다. [Exposed Spring 통합](https://www.jetbrains.com/help/exposed/spring-boot-integration.html)
 
-`TodoService`의 기본값은 `@Transactional(readOnly = true)`다. `create`와 `complete`는 메서드의 `@Transactional`로 쓰기를 허용하며, `complete`의 조회와 저장은 같은 트랜잭션에서 실행한다. 기본 전파 방식 `REQUIRED`는 이미 열린 트랜잭션이 있으면 참여한다.
+`TodoService`, `OrderService`, `OfferService`, `StockService`의 기본값은 `@Transactional(readOnly = true)`다. 쓰기 메서드는 `@Transactional`로 재정의한다. 주문 취소·판매 중단·재고 변경의 행 잠금·조회·저장은 해당 서비스의 쓰기 트랜잭션에서 실행한다. 기본 전파 방식 `REQUIRED`는 이미 열린 트랜잭션이 있으면 참여한다.
 
 - **관리되는 빈을 호출한다.** `config`의 `@Bean`으로 조립된 유스케이스를 주입받아 호출한다. 직접 만든 객체나 같은 객체 내부 호출은 프록시를 통과하지 않아 새 트랜잭션 경계를 만들지 않는다. [Spring 프록시 동작](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html)
 - **읽기 전용은 접근 제어가 아니다.** `readOnly`는 DB·드라이버에 전달하는 힌트다. 데이터 변경을 막는 보안 장치로 사용하지 않는다.
 - **롤백 조건을 명시한다.** 기본 정책은 `RuntimeException`과 `Error`를 롤백한다. SQL 오류가 아닌 checked 예외도 롤백해야 한다면 `rollbackFor`로 계약을 명시하고 테스트한다. Kotlin이 checked 예외 선언을 강제하지 않아도 이 구분은 유지된다. [Spring 롤백 규칙](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/rolling-back.html)
 - **같은 스레드에서 완료한다.** JDBC 트랜잭션 안에서 비동기 실행이나 코루틴 디스패처 전환으로 작업을 넘기지 않는다. 가상 스레드를 사용해도 Spring의 JDBC 트랜잭션은 실행 스레드에 연결된다.
 
-여러 변경이 하나의 업무라면 유스케이스의 트랜잭션 경계 안에 두고 실제 DB의 커밋·중간 실패 시 전체 롤백을 통합 테스트한다. 테스트 자체의 자동 롤백으로 결과를 가리지 않고 새 트랜잭션에서 저장 상태를 확인한다. 유스케이스에 트랜잭션 매니저나 `TransactionTemplate`을 주입하거나 별도 데코레이터를 추가할 필요는 없다.
+Order의 헤더와 모든 품목은 하나의 어그리게이트이므로 함께 커밋하거나 롤백한다. Order 생성은 Offer를 읽지만 Offer를 변경하지 않는다. 여러 루트의 쓰기가 원자적이어야 하는 요구는 [경계 선정 절차](ddd-architecture.md#새-기능을-분류하는-절차)에 따라 먼저 재검토한다. 선택한 트랜잭션의 실제 커밋·중간 실패 시 전체 롤백을 테스트하며, 테스트 자체의 자동 롤백으로 결과를 가리지 않고 새 연결에서 저장 상태를 확인한다. 유스케이스에 트랜잭션 매니저나 `TransactionTemplate`을 주입하거나 별도 데코레이터를 추가하지 않는다.
+
+트랜잭션 범위는 유스케이스가, 업무 불변식은 어그리게이트 루트가 정한다. 한 트랜잭션에서 무엇을 함께 바꿀지는 정적 검사가 아니라 유스케이스 설계와 리뷰에서 판단한다.
 
 ## 스키마 변경
 
-`src/main/resources/db/migration`에 `V2__describe_change.sql`처럼 다음 버전의 Flyway SQL을 추가한다. 이미 배포된 버전의 파일을 수정하면 체크섬 검증에 실패하므로 새 마이그레이션으로 변경한다.
+`src/main/resources/db/migration`에 `V5__describe_change.sql`처럼 다음 버전의 Flyway SQL을 추가한다. V1은 Todo, V2는 단일 품목 주문, V3는 재고이며 파일 내용은 보존한다. V4는 판매품목과 주문 품목 테이블을 추가하고 기존 주문의 SKU·수량을 품목 한 행으로 옮긴 뒤 헤더의 두 열을 제거한다. 과거 주문으로 판매 가능 여부를 추정하지 않으므로 Offer는 자동 생성하지 않는다. 기존 주문은 조회·취소할 수 있고 새 주문에는 먼저 Offer를 등록해야 한다. 이미 배포된 버전은 새 마이그레이션으로 변경한다.
+
+이전 이벤트 구현 때의 배포하지 않은 초안(V2~V5)을 개인 로컬 DB에 적용했다면 체크섬·스키마가 달라 시작에 실패할 수 있다. 이 경우 필요한 데이터를 백업한 뒤 해당 개발 DB를 다시 만들며 자동 초기화는 제공하지 않는다. 직전의 이벤트 없는 V1~V3 스키마는 V4로 정상 업그레이드한다.
 
 스키마는 Flyway만 관리한다. Exposed 스타터의 자동 DDL 생성을 끄는 `spring.exposed.generate-ddl=false`를 유지한다.
 
@@ -66,10 +89,10 @@ Exposed의 행, 테이블, 트랜잭션 타입을 도메인이나 포트로 반�
 
 ## REST Docs 갱신
 
-`TodoApiDocumentationTest`는 실제 애플리케이션, Flyway, H2와 MockMvc를 사용한다. API 계약을 바꿀 때 요청·응답 검증과 REST Docs 필드 설명을 함께 갱신한다.
+`TodoApiDocumentationTest`, `OrderApiDocumentationTest`, `OfferApiDocumentationTest`, `StockApiDocumentationTest`는 실제 애플리케이션, Flyway, H2와 MockMvc를 사용한다. API 계약을 바꿀 때 요청·응답 검증과 REST Docs 필드 설명을 함께 갱신한다.
 
 ```sh
-./gradlew :test --tests '*TodoApiDocumentationTest'
+./gradlew :test --tests '*ApiDocumentationTest'
 ./gradlew build
 java -jar build/libs/application.jar
 ```
