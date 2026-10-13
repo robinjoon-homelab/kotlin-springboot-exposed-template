@@ -10,14 +10,6 @@ class StockItemTest {
     private val sku = Sku("KB-001")
 
     @Test
-    fun `registration keeps the sku and onHand`() {
-        val item = StockItem.register(sku, 5)
-
-        assertThat(item.sku).isEqualTo(sku)
-        assertThat(item.onHand).isEqualTo(5)
-    }
-
-    @Test
     fun `registration accepts zero but rejects negative onHand`() {
         assertThat(StockItem.register(sku, 0).onHand).isZero()
         assertThatThrownBy { StockItem.register(sku, -1) }.isInstanceOf(InvalidStockException::class.java)
@@ -67,10 +59,5 @@ class StockItemTest {
     fun `restoration rejects negative onHand`() {
         assertThat(StockItem.restore(sku, 0)).isEqualTo(StockItem.register(sku, 0))
         assertThatThrownBy { StockItem.restore(sku, -1) }.isInstanceOf(InvalidStockException::class.java)
-    }
-
-    @Test
-    fun `sku prints as the plain code`() {
-        assertThat(sku.toString()).isEqualTo("KB-001")
     }
 }

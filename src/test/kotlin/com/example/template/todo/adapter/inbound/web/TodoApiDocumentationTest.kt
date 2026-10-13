@@ -1,266 +1,212 @@
 package com.example.template.todo.adapter.inbound.web
 
-import org.assertj.core.api.Assertions.assertThat
-import org.hamcrest.Matchers.startsWith
-import org.junit.jupiter.api.BeforeEach
+import com.example.template.support.web.RestDocsWebTest
+import com.example.template.support.web.documented
+import com.example.template.support.web.problemFields
+import com.example.template.todo.application.port.input.TodoNotFoundException
+import com.example.template.todo.application.port.input.TodoUseCase
+import com.example.template.todo.domain.todo.InvalidTodoTitleException
+import com.example.template.todo.domain.todo.Todo
+import com.example.template.todo.domain.todo.TodoId
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Test
-import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.restdocs.test.autoconfigure.AutoConfigureRestDocs
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.http.MediaType
 import org.springframework.restdocs.headers.HeaderDocumentation.headerWithName
 import org.springframework.restdocs.headers.HeaderDocumentation.responseHeaders
-import org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.document
 import org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get
 import org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.patch
 import org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post
-import org.springframework.restdocs.operation.preprocess.Preprocessors.preprocessRequest
-import org.springframework.restdocs.operation.preprocess.Preprocessors.preprocessResponse
-import org.springframework.restdocs.operation.preprocess.Preprocessors.prettyPrint
 import org.springframework.restdocs.payload.FieldDescriptor
-import org.springframework.restdocs.payload.JsonFieldType
 import org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath
 import org.springframework.restdocs.payload.PayloadDocumentation.requestFields
 import org.springframework.restdocs.payload.PayloadDocumentation.responseFields
 import org.springframework.restdocs.request.RequestDocumentation.parameterWithName
 import org.springframework.restdocs.request.RequestDocumentation.pathParameters
-import org.springframework.restdocs.snippet.Snippet
-import org.springframework.test.context.ActiveProfiles
-import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.json.JsonCompareMode
+import org.springframework.test.web.servlet.ResultActions
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.time.Instant
 import java.util.UUID
-import javax.sql.DataSource
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@AutoConfigureRestDocs(uriScheme = "https", uriHost = "api.example.com", uriPort = 443)
-@ActiveProfiles("test")
-class TodoApiDocumentationTest {
-    @Autowired
-    private lateinit var mockMvc: MockMvc
-
-    @Autowired
-    private lateinit var dataSource: DataSource
-
-    @BeforeEach
-    fun clearDatabase() {
-        dataSource.connection.use { connection ->
-            connection.createStatement().use { it.executeUpdate("DELETE FROM todos") }
-        }
-    }
+// The use case is a strict mock: the HTTP adapter must call only what a test stubs. Title normalization and the
+// domain limits are covered by TodoTest and TodoServiceTest; this test checks what the endpoint passes on and how it
+// turns results and failures into HTTP.
+class TodoApiDocumentationTest : RestDocsWebTest() {
+    private val todoId: UUID = UUID.fromString("3f0c8c3e-5b1a-4f4e-9a52-6a1d2b7c9e10")
+    private val secondTodoId: UUID = UUID.fromString("8a6e0f2d-1c3b-4d5e-8f70-9a1b2c3d4e5f")
+    private val missingId: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+    private val createdAt: Instant = Instant.parse("2026-10-13T00:00:00Z")
+    private val todoUseCase = mockk<TodoUseCase>()
+    private val mockMvc = restDocsMockMvc(TodoController(todoUseCase), ApiExceptionHandler())
 
     @Test
-    fun `create returns a location and persists the normalized title`() {
-        val result =
-            mockMvc
-                .perform(
-                    post("/api/todos")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""{"title":"  Write the first feature  "}"""),
-                ).andExpect(status().isCreated)
-                .andExpect(header().string("Location", startsWith("/api/todos/")))
-                .andExpect(jsonPath("$.id").isNotEmpty)
-                .andExpect(jsonPath("$.title").value("Write the first feature"))
-                .andExpect(jsonPath("$.completed").value(false))
-                .andExpect(jsonPath("$.createdAt").isNotEmpty)
-                .andDo(
-                    documented(
-                        "todos-create",
-                        requestFields(
-                            fieldWithPath("title").description(
-                                "1~200자 제목. 공백만 입력할 수 없으며 저장할 때 앞뒤 공백을 제거합니다.",
-                            ),
+    fun `create passes the raw title and returns the created todo with its location`() {
+        val todo = Todo.create(TodoId(todoId), "  Write the first feature  ", createdAt)
+        every { todoUseCase.create("  Write the first feature  ") } returns todo
+
+        create("""{"title":"  Write the first feature  "}""")
+            .andExpect(status().isCreated)
+            .andExpect(header().string("Location", "/api/todos/$todoId"))
+            .andExpect(content().json(todoJson(title = "Write the first feature", completed = false), JsonCompareMode.STRICT))
+            .andDo(
+                documented(
+                    "todos-create",
+                    requestFields(
+                        fieldWithPath("title").description(
+                            "1~200자 제목. 공백만 입력할 수 없으며 저장할 때 앞뒤 공백을 제거합니다.",
                         ),
-                        responseHeaders(headerWithName("Location").description("생성된 할 일의 조회 경로")),
-                        responseFields(*todoFields()),
                     ),
-                ).andReturn()
-
-        val location = checkNotNull(result.response.getHeader("Location"))
-        val id = UUID.fromString(location.substringAfterLast('/'))
-        assertStoredTodo(id, "Write the first feature", completed = false)
-        mockMvc
-            .perform(get("/api/todos/{id}", id))
-            .andExpect(status().isOk)
-            .andExpect(content().json(result.response.contentAsString))
+                    responseHeaders(headerWithName("Location").description("생성된 할 일의 조회 경로")),
+                    responseFields(*todoFields()),
+                ),
+            )
     }
 
     @Test
-    fun `get returns the persisted todo`() {
-        val id = createTodo("Read the API documentation")
+    fun `get returns the todo of the path id`() {
+        every { todoUseCase.get(TodoId(todoId)) } returns todo("Read the API documentation")
 
         mockMvc
-            .perform(get("/api/todos/{id}", id))
+            .perform(get("/api/todos/{id}", todoId))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.id").value(id.toString()))
-            .andExpect(jsonPath("$.title").value("Read the API documentation"))
-            .andExpect(jsonPath("$.completed").value(false))
+            .andExpect(content().json(todoJson(title = "Read the API documentation", completed = false), JsonCompareMode.STRICT))
             .andDo(documented("todos-get", todoIdParameter(), responseFields(*todoFields())))
     }
 
     @Test
-    fun `list returns persisted todos`() {
-        createTodo("Read the API documentation")
-        createTodo("Write the first feature")
+    fun `list returns the todos in the order the use case gives`() {
+        val second = Todo.restore(TodoId(secondTodoId), "Write the first feature", completed = false, createdAt)
+        every { todoUseCase.list() } returns listOf(todo("Read the API documentation"), second)
 
         mockMvc
             .perform(get("/api/todos"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[0].id").value(todoId.toString()))
             .andExpect(jsonPath("$[0].title").value("Read the API documentation"))
+            .andExpect(jsonPath("$[1].id").value(secondTodoId.toString()))
             .andExpect(jsonPath("$[1].title").value("Write the first feature"))
             .andDo(documented("todos-list", responseFields(*todoFields("[]."))))
     }
 
     @Test
     fun `list returns an empty array when there are no todos`() {
+        every { todoUseCase.list() } returns emptyList()
+
         mockMvc
             .perform(get("/api/todos"))
             .andExpect(status().isOk)
-            .andExpect(content().json("[]"))
+            .andExpect(content().json("[]", JsonCompareMode.STRICT))
     }
 
     @Test
-    fun `complete persists the state and is idempotent`() {
-        val id = createTodo("Write the first feature")
-
-        val firstResponse =
-            mockMvc
-                .perform(patch("/api/todos/{id}/complete", id))
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.id").value(id.toString()))
-                .andExpect(jsonPath("$.completed").value(true))
-                .andDo(documented("todos-complete", todoIdParameter(), responseFields(*todoFields())))
-                .andReturn()
-                .response.contentAsString
+    fun `complete returns the completed todo`() {
+        every { todoUseCase.complete(TodoId(todoId)) } returns todo("Write the first feature").complete()
 
         mockMvc
-            .perform(patch("/api/todos/{id}/complete", id))
+            .perform(patch("/api/todos/{id}/complete", todoId))
             .andExpect(status().isOk)
-            .andExpect(content().json(firstResponse))
-        assertStoredTodo(id, "Write the first feature", completed = true)
+            .andExpect(content().json(todoJson(title = "Write the first feature", completed = true), JsonCompareMode.STRICT))
+            .andDo(documented("todos-complete", todoIdParameter(), responseFields(*todoFields())))
     }
 
     @Test
-    fun `blank title returns a documented bad request`() {
-        mockMvc
-            .perform(post("/api/todos").contentType(MediaType.APPLICATION_JSON).content("""{"title":"   "}"""))
+    fun `blank title returns a documented bad request before the use case`() {
+        create("""{"title":"   "}""")
             .andExpect(status().isBadRequest)
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.status").value(400))
+            .andExpect(jsonPath("$.instance").value("/api/todos"))
             .andDo(documented("todos-invalid-title", responseFields(*problemFields())))
-        assertTodoCount(0)
+        verify(exactly = 0) { todoUseCase.create(any()) }
     }
 
     @Test
-    fun `empty oversized missing and null titles are rejected without persisting`() {
-        val invalidRequests = listOf("""{"title":""}""", """{"title":"${"x".repeat(201)}"}""", "{}", """{"title":null}""")
+    fun `empty oversized missing null and malformed titles are rejected before the use case`() {
+        val invalidRequests = listOf("""{"title":""}""", """{"title":"${"x".repeat(201)}"}""", "{}", """{"title":null}""", "{")
 
         invalidRequests.forEach { request ->
-            mockMvc
-                .perform(post("/api/todos").contentType(MediaType.APPLICATION_JSON).content(request))
+            create(request)
                 .andExpect(status().isBadRequest)
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        assertTodoCount(0)
+        verify(exactly = 0) { todoUseCase.create(any()) }
     }
 
     @Test
-    fun `nonbreaking space title returns bad request after normalization`() {
-        mockMvc
-            .perform(post("/api/todos").contentType(MediaType.APPLICATION_JSON).content("""{"title":"\u00a0"}"""))
+    fun `title with exactly 200 characters reaches the use case`() {
+        val title = "x".repeat(200)
+        every { todoUseCase.create(title) } returns Todo.create(TodoId(todoId), title, createdAt)
+
+        create("""{"title":"$title"}""")
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.title").value(title))
+    }
+
+    // @NotBlank does not treat a non-breaking space as blank, so this title reaches the domain, which rejects it.
+    @Test
+    fun `title rejected by the domain returns a problem bad request`() {
+        every { todoUseCase.create(" ") } throws InvalidTodoTitleException("title must not be blank")
+
+        create("""{"title":" "}""")
             .andExpect(status().isBadRequest)
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.status").value(400))
-        assertTodoCount(0)
-    }
-
-    @Test
-    fun `title with exactly 200 characters is accepted`() {
-        val title = "x".repeat(200)
-
-        mockMvc
-            .perform(post("/api/todos").contentType(MediaType.APPLICATION_JSON).content("""{"title":"$title"}"""))
-            .andExpect(status().isCreated)
-            .andExpect(jsonPath("$.title").value(title))
-        assertTodoCount(1)
+            .andExpect(jsonPath("$.title").value("Invalid title"))
+            .andExpect(jsonPath("$.detail").value("title must not be blank"))
     }
 
     @Test
     fun `get missing todo returns a documented not found`() {
+        every { todoUseCase.get(TodoId(missingId)) } throws TodoNotFoundException(TodoId(missingId))
+
         mockMvc
-            .perform(get("/api/todos/{id}", UUID.fromString("00000000-0000-0000-0000-000000000000")))
+            .perform(get("/api/todos/{id}", missingId))
             .andExpect(status().isNotFound)
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.status").value(404))
+            .andExpect(jsonPath("$.title").value("Todo not found"))
+            .andExpect(jsonPath("$.instance").value("/api/todos/$missingId"))
             .andDo(documented("todos-not-found", todoIdParameter(), responseFields(*problemFields())))
     }
 
     @Test
-    fun `completion of missing todo does not create it`() {
+    fun `completion of a missing todo returns not found`() {
+        every { todoUseCase.complete(TodoId(missingId)) } throws TodoNotFoundException(TodoId(missingId))
+
         mockMvc
-            .perform(patch("/api/todos/{id}/complete", UUID.randomUUID()))
+            .perform(patch("/api/todos/{id}/complete", missingId))
             .andExpect(status().isNotFound)
             .andExpect(jsonPath("$.status").value(404))
-        assertTodoCount(0)
+            .andExpect(jsonPath("$.title").value("Todo not found"))
     }
 
     @Test
-    fun `malformed UUID and malformed JSON return bad request`() {
-        mockMvc.perform(get("/api/todos/{id}", "invalid-id")).andExpect(status().isBadRequest)
-        mockMvc
-            .perform(post("/api/todos").contentType(MediaType.APPLICATION_JSON).content("{"))
-            .andExpect(status().isBadRequest)
-        assertTodoCount(0)
-    }
-
-    private fun createTodo(title: String): UUID {
-        val location =
+    fun `malformed id returns a problem bad request before the use case`() {
+        listOf(get("/api/todos/{id}", "invalid-id"), patch("/api/todos/{id}/complete", "invalid-id")).forEach { request ->
             mockMvc
-                .perform(post("/api/todos").contentType(MediaType.APPLICATION_JSON).content("""{"title":"$title"}"""))
-                .andExpect(status().isCreated)
-                .andReturn()
-                .response
-                .getHeader("Location")
-        return UUID.fromString(checkNotNull(location).substringAfterLast('/'))
+                .perform(request)
+                .andExpect(status().isBadRequest)
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        }
+        verify(exactly = 0) { todoUseCase.get(any()) }
+        verify(exactly = 0) { todoUseCase.complete(any()) }
     }
 
-    private fun assertStoredTodo(
-        id: UUID,
+    private fun create(body: String): ResultActions =
+        mockMvc.perform(post("/api/todos").contentType(MediaType.APPLICATION_JSON).content(body))
+
+    private fun todo(title: String): Todo = Todo.restore(TodoId(todoId), title, completed = false, createdAt)
+
+    private fun todoJson(
         title: String,
         completed: Boolean,
-    ) {
-        dataSource.connection.use { connection ->
-            connection.prepareStatement("SELECT title, completed FROM todos WHERE id = ?").use { statement ->
-                statement.setObject(1, id)
-                statement.executeQuery().use { result ->
-                    assertThat(result.next()).isTrue()
-                    assertThat(result.getString("title")).isEqualTo(title)
-                    assertThat(result.getBoolean("completed")).isEqualTo(completed)
-                    assertThat(result.next()).isFalse()
-                }
-            }
-        }
-    }
-
-    private fun assertTodoCount(expected: Int) {
-        dataSource.connection.use { connection ->
-            connection.createStatement().use { statement ->
-                statement.executeQuery("SELECT COUNT(*) FROM todos").use { result ->
-                    assertThat(result.next()).isTrue()
-                    assertThat(result.getInt(1)).isEqualTo(expected)
-                }
-            }
-        }
-    }
-
-    private fun documented(
-        identifier: String,
-        vararg snippets: Snippet,
-    ) = document(identifier, preprocessRequest(prettyPrint()), preprocessResponse(prettyPrint()), *snippets)
+    ): String = """{"id":"$todoId","title":"$title","completed":$completed,"createdAt":"$createdAt"}"""
 
     private fun todoIdParameter() = pathParameters(parameterWithName("id").description("할 일의 UUID"))
 
@@ -270,17 +216,5 @@ class TodoApiDocumentationTest {
             fieldWithPath("${prefix}title").description("할 일 제목"),
             fieldWithPath("${prefix}completed").description("완료 여부"),
             fieldWithPath("${prefix}createdAt").description("생성 시각, ISO 8601 UTC"),
-        )
-
-    private fun problemFields(): Array<FieldDescriptor> =
-        arrayOf(
-            fieldWithPath("type")
-                .type(JsonFieldType.STRING)
-                .optional()
-                .description("오류 유형 URI. 생략되면 RFC 9457 기본값 about:blank입니다."),
-            fieldWithPath("title").description("오류 요약"),
-            fieldWithPath("status").description("HTTP 상태 코드"),
-            fieldWithPath("detail").description("오류의 구체적인 원인"),
-            fieldWithPath("instance").description("오류가 발생한 요청 경로"),
         )
 }

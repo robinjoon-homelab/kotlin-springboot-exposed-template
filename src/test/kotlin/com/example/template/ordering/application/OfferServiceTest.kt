@@ -1,90 +1,93 @@
 package com.example.template.ordering.application
 
 import com.example.template.ordering.application.port.input.OfferNotFoundException
+import com.example.template.ordering.application.port.output.OfferRepository
 import com.example.template.ordering.application.service.OfferService
 import com.example.template.ordering.domain.Sku
 import com.example.template.ordering.domain.offer.DuplicateOfferException
 import com.example.template.ordering.domain.offer.Offer
 import com.example.template.ordering.domain.offer.OfferId
 import com.example.template.ordering.domain.offer.OfferStatus
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.util.UUID
 
+// The repository is a strict mock: a port call a test does not stub fails the test. Rejecting a stored duplicate SKU
+// belongs to the repository and is verified against H2 in ExposedOfferRepositoryTest.
 class OfferServiceTest {
     private val sku = Sku("BOOK-001")
-    private val operations = mutableListOf<String>()
-    private val repository = FakeOfferRepository(operations)
+    private val repository = mockk<OfferRepository>()
     private val service = OfferService(repository)
 
     @Test
     fun `registration adds an offer on sale under a new id`() {
-        val registered = service.register(sku)
+        val added = mutableListOf<Offer>()
+        every { repository.add(capture(added)) } answers { firstArg() }
 
-        assertThat(registered).isEqualTo(Offer.restore(registered.id, sku, OfferStatus.ON_SALE))
-        assertThat(operations).containsExactly("offer.add")
-        assertThat(repository.findById(registered.id)).isEqualTo(registered)
-    }
-
-    @Test
-    fun `each registration gets its own offer identifier`() {
         val first = service.register(sku)
         val second = service.register(Sku("BOOK-002"))
 
+        assertThat(added).containsExactly(first, second)
+        assertThat(first).isEqualTo(Offer.restore(first.id, sku, OfferStatus.ON_SALE))
         assertThat(first.id).isNotEqualTo(second.id)
     }
 
     @Test
-    fun `a sku that already has an offer is rejected and the first offer stays`() {
-        val first = service.register(sku)
+    fun `a duplicate sku rejected by the repository reaches the caller`() {
+        every { repository.add(any()) } throws DuplicateOfferException(sku, IllegalStateException("unique sku violated"))
 
         assertThatThrownBy { service.register(sku) }
             .isInstanceOf(DuplicateOfferException::class.java)
             .hasMessage("Offer already registered for SKU: BOOK-001")
-        assertThat(operations).containsExactly("offer.add")
-        assertThat(repository.findById(first.id)).isEqualTo(first)
     }
 
     @Test
-    fun `get returns an offer without locking or writing and reports a missing one`() {
+    fun `get returns an offer and reports a missing one`() {
         val existing = Offer.register(OfferId(UUID.randomUUID()), sku)
-        repository.seed(existing)
         val missingId = OfferId(UUID.randomUUID())
+        every { repository.findById(existing.id) } returns existing
+        every { repository.findById(missingId) } returns null
 
         assertThat(service.get(existing.id)).isEqualTo(existing)
         assertThatThrownBy { service.get(missingId) }
             .isInstanceOf(OfferNotFoundException::class.java)
             .hasMessage("Offer not found: $missingId")
-        assertThat(operations).isEmpty()
     }
 
     @Test
-    fun `discontinuing an offer on sale locks it and updates it`() {
+    fun `discontinuing an offer on sale updates it as discontinued`() {
         val onSale = Offer.register(OfferId(UUID.randomUUID()), sku)
-        repository.seed(onSale)
+        val expected = Offer.restore(onSale.id, sku, OfferStatus.DISCONTINUED)
+        every { repository.findByIdForUpdate(onSale.id) } returns onSale
+        every { repository.update(any()) } answers { firstArg() }
 
         val discontinued = service.discontinue(onSale.id)
 
-        assertThat(discontinued).isEqualTo(Offer.restore(onSale.id, sku, OfferStatus.DISCONTINUED))
-        assertThat(operations).containsExactly("offer.findByIdForUpdate", "offer.update")
-        assertThat(repository.findById(onSale.id)).isEqualTo(discontinued)
+        assertThat(discontinued).isEqualTo(expected)
+        verify(exactly = 1) { repository.update(expected) }
     }
 
     @Test
     fun `discontinuing again returns the discontinued offer without writing`() {
         val discontinued = Offer.restore(OfferId(UUID.randomUUID()), sku, OfferStatus.DISCONTINUED)
-        repository.seed(discontinued)
+        every { repository.findByIdForUpdate(discontinued.id) } returns discontinued
 
         assertThat(service.discontinue(discontinued.id)).isEqualTo(discontinued)
-        assertThat(operations).containsExactly("offer.findByIdForUpdate")
+        verify(exactly = 0) { repository.update(any()) }
     }
 
     @Test
     fun `discontinuing a missing offer writes nothing`() {
-        assertThatThrownBy { service.discontinue(OfferId(UUID.randomUUID())) }
-            .isInstanceOf(OfferNotFoundException::class.java)
+        val missingId = OfferId(UUID.randomUUID())
+        every { repository.findByIdForUpdate(missingId) } returns null
 
-        assertThat(operations).containsExactly("offer.findByIdForUpdate")
+        assertThatThrownBy { service.discontinue(missingId) }
+            .isInstanceOf(OfferNotFoundException::class.java)
+            .hasMessage("Offer not found: $missingId")
+        verify(exactly = 0) { repository.update(any()) }
     }
 }

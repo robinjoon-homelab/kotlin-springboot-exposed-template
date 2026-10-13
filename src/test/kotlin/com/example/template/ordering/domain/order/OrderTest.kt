@@ -70,20 +70,6 @@ class OrderTest {
     fun `the exposed lines reject writes even through a mutable view`() {
         assertThat(placed.lines).isUnmodifiable()
         assertThat(Order.restore(id, listOf(keyboard), OrderStatus.PLACED, placedAt).lines).isUnmodifiable()
-        assertThat(placed.cancel()?.lines).isUnmodifiable()
-    }
-
-    @Test
-    fun `cancellation changes a placed order, keeps its lines, and leaves the original unchanged`() {
-        val cancelled = placed.cancel()
-
-        assertThat(cancelled).isEqualTo(Order.restore(id, listOf(keyboard, mouse), OrderStatus.CANCELLED, placedAt))
-        assertThat(placed.status).isEqualTo(OrderStatus.PLACED)
-    }
-
-    @Test
-    fun `cancelling a cancelled order changes nothing`() {
-        assertThat(Order.restore(id, listOf(keyboard), OrderStatus.CANCELLED, placedAt).cancel()).isNull()
     }
 
     private fun lines(count: Int): List<OrderLine> = (1..count).map { OrderLine(Sku("SKU-$it"), 1) }

@@ -5,13 +5,9 @@
 :sectnums:
 :source-highlighter: highlight.js
 
-이 문서는 실제 애플리케이션과 데이터베이스를 사용하는 테스트에서 생성합니다.
-요청 또는 응답 필드가 문서와 달라지면 REST Docs 테스트가 실패합니다.
-예시의 `https://api.example.com`은 설명용 주소이며 로컬 실행 주소는 `http://localhost:8080`입니다.
+로컬 요청에서는 예시의 `https://api.example.com`을 `http://localhost:8080`으로 바꿉니다.
 
 == Todo CRUD
-
-단일 어그리게이트의 기본 CRUD 예제입니다.
 
 === 할 일 생성
 
@@ -61,9 +57,9 @@ include::{snippets}/todos-not-found/response-fields.adoc[]
 
 == 판매품목
 
-주문 BC의 Offer 어그리게이트입니다. SKU는 유일하며, UUID로 조회하고 판매를 중단합니다.
-판매 상태는 ON_SALE에서 DISCONTINUED로 바뀌며 반복 중단은 같은 상태를 반환합니다.
-판매 중단은 이미 접수한 주문을 바꾸지 않습니다. 재고 등록과도 독립적입니다.
+* 주문 전에 SKU를 등록하고 응답의 UUID로 조회·판매 중단을 요청합니다.
+* 판매 중단 상태는 DISCONTINUED이며 반복 중단은 같은 상태를 반환합니다.
+* 판매 중단으로 기존 주문·재고가 바뀐다고 가정하지 않습니다.
 
 === 판매품목 등록
 
@@ -111,11 +107,10 @@ include::{snippets}/offers-duplicate/response-fields.adoc[]
 
 == 주문
 
-주문 BC의 Order 어그리게이트입니다. SKU가 서로 다른 품목 1~10개, 품목별 수량 1~100을 받습니다.
-품목(OrderLine)은 주문이 함께 저장하는 값 객체이며 접수 후 변경하지 않습니다. 주문은 PLACED 상태로 접수됩니다.
-Offer를 읽은 시점에 모든 SKU가 ON_SALE이어야 합니다. 조회 직후 판매 중단이 커밋돼도 읽은 상태로 접수할 수 있습니다.
-취소하면 CANCELLED가 되고, 반복해서 취소해도 같은 상태를 반환합니다.
-주문은 재고를 확인하거나 예약하지 않습니다.
+* 판매 중인 Offer의 SKU를 서로 다르게 1~10개 제출하고 품목별 수량은 1~100으로 지정합니다.
+* 품목(OrderLine)은 접수 후 변경하지 않습니다. 접수 상태는 PLACED, 취소 상태는 CANCELLED이며 반복 취소는 같은 상태를 반환합니다.
+* Offer 조회 직후 판매 중단이 커밋된 경우에는 이미 읽은 상태로 주문이 접수될 수 있음을 고려합니다.
+* 주문 성공으로 재고 확인·예약을 가정하지 않습니다.
 
 === 주문 접수
 
@@ -165,7 +160,7 @@ include::{snippets}/orders-not-on-sale/response-fields.adoc[]
 
 == 재고
 
-재고 BC의 예제입니다. 재고 품목은 SKU와 0 이상의 보유량을 가지며 양수 수량만 입고할 수 있습니다.
+품목을 등록할 때 보유량은 0 이상으로, 입고 요청의 수량은 양수로 지정합니다.
 
 === 재고 품목 등록
 

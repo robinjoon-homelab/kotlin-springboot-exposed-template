@@ -1,130 +1,91 @@
-# 개발 가이드
+# 개발 작업 지침
 
 ## 실행 환경
 
-JDK 25와 Gradle 9.3.0 Wrapper인 `./gradlew`를 사용한다. REST Docs는 4.0.1, ktlint Gradle 플러그인은 14.2.0, ktlint 엔진은 1.8.0, detekt는 2.0.0-alpha.6으로 고정한다. detekt는 정식 릴리스 전 버전이므로 업그레이드 시 사용자 정의 규칙과 타입 분석도 다시 검증한다. 기본 설정은 H2 파일 DB, 가상 스레드, Flyway, 정상 종료를 활성화한다. 테스트는 독립된 H2 인메모리 DB를 사용한다.
+- `JAVA_HOME`을 JDK 25로 설정하고 저장소의 `./gradlew`를 사용한다. 전역 Gradle을 사용하지 않는다.
+- 의존성 변경 전 `build.gradle.kts`와 `gradle/wrapper/gradle-wrapper.properties`의 버전을 확인한다.
+- 로컬 API는 `http://localhost:8080`으로 호출한다. H2 개발 DB를 초기화할 때는 앱을 종료하고 필요한 데이터를 백업한 뒤 `data/`를 삭제한다.
+- 기본 프로필의 DB 연결은 `DB_URL`·`DB_USERNAME`·`DB_PASSWORD` 또는 표준 `SPRING_DATASOURCE_URL`·`SPRING_DATASOURCE_USERNAME`·`SPRING_DATASOURCE_PASSWORD`로 지정한다. H2 외의 DB에는 `DB_DRIVER`도 설정한다.
+- 운영 PostgreSQL에는 [배포 계약](deployment.md#컨테이너와-db-계약)의 `prod` 프로필을 사용한다. DB 파일·자격 증명을 커밋하지 않는다.
 
-애플리케이션 실행·테스트·빌드·detekt에는 **JDK 25와 저장소의 Gradle Wrapper만 필요하다.** Python은 별도 배포 도구에서만 사용한다.
+## 기능 변경
 
-```sh
-./gradlew bootRun
-./gradlew test
-./gradlew build
-```
+1. 명령·조회·성공·실패·동시 실행 조건을 확인하고 [경계 선정 절차](ddd-architecture.md#새-기능을-분류하는-절차)로 소유 BC·루트를 정한다.
+2. 도메인 규칙과 [기본 범위](#테스트-범위)의 테스트를 작성한다. 새 BC·루트는 `HexagonalArchitectureTest.contextAggregates`와 아키텍처 문서의 목록에도 등록한다.
+3. 필요한 입력·출력 포트와 유스케이스를 변경하고 [트랜잭션 계약](ddd-architecture.md#트랜잭션)을 적용한다.
+4. 어댑터와 `config`의 빈 조립을 변경한다. HTTP·DB를 바꾸면 아래 해당 절차도 수행한다.
+5. [변경 설명](ddd-architecture.md#변경-설명에-남길-최소-기록)을 남기고 [변경별 검증과 전체 빌드](#실행과-검증)를 실행한다.
 
-기본 H2 데이터는 `data/`에 저장된다. 로컬 DB를 초기화하려면 애플리케이션을 종료한 후 **보존할 데이터가 없는지 확인하고** 이 디렉터리를 삭제한다. 저장소에 DB 파일이나 비밀번호를 커밋하지 않는다.
+## 테스트 범위
 
-기본 프로필에서는 `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`로 연결을 재정의할 수 있다. 표준 Spring 환경변수 `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`도 사용할 수 있다. 기본 드라이버는 H2이므로 다른 DB로 전환할 때는 `DB_DRIVER`도 바꾸거나 PostgreSQL용 `prod` 프로필을 사용한다. 배포 환경은 `prod` 프로필과 표준 Spring 환경변수를 사용한다.
+테스트 대상과 수준은 이 절을 원본으로 한다.
 
-## 예제 API
+- 테스트 대상 함수가 본문에서 서로 다른 함수를 2개 이상 호출할 때만 그 함수의 테스트를 작성한다. 다른 함수 하나에 처리를 넘기는 단순 위임은 작성 대상에서 제외한다.
+- 호출 수는 테스트 코드가 아니라 대상 함수 본문에서 센다. 같은 함수의 반복 호출은 하나로 보고, 테스트 준비·단언에서 부르는 함수는 세지 않는다.
+- 생성자·`init` 블록에도 같은 기준을 적용한다. 내장·표준·라이브러리 함수와 생성자 호출도 호출로 센다.
+- 트랜잭션 동작은 프레임워크를 신뢰하고 테스트 작성 대상에서 제외한다.
 
-`Todo`는 UUID 식별자, 제목, 완료 여부, 생성 시각을 가진다. 빈 제목과 공백만 있는 제목은 거부하며 최대 200자다.
+작성 대상은 다음 방식으로 검증한다.
 
-- `POST /api/todos`: `{"title":"첫 기능 만들기"}`를 받아 `201 Created`와 `Location`을 반환한다.
-- `GET /api/todos/{id}`: 항목을 조회한다. 없으면 `404`를 반환한다.
-- `GET /api/todos`: 목록을 배열로 반환한다.
-- `PATCH /api/todos/{id}/complete`: 완료 처리한다. 여러 번 요청해도 완료 상태를 유지한다.
+| 대상 | 방식 |
+| --- | --- |
+| 도메인 모델·값 | 프레임워크와 모킹 없이 순수 단위 테스트로 검증한다. |
+| 순수 Kotlin 객체가 아닌 의존이 필요한 단위(유스케이스 등) | 출력 포트와 외부 효과를 MockK로 대체한다. 도메인 객체·값·`Clock.fixed`는 실제 값을 쓴다. |
+| RDB 출력 어댑터 | 어댑터 하나를 H2와 Flyway 스키마에 연결해 저장·조회·매핑·제약을 검증한다. |
+| HTTP 입력 어댑터·외부 API 어댑터 | 입력 포트와 외부 의존을 MockK로 대체하고 MockMvc 등 전용 기술로 어댑터 하나를 검증한다. |
 
-정상 응답 필드는 `id`, `title`, `completed`, `createdAt`이다. 잘못된 요청은 `400`, 없는 항목은 `404`를 ProblemDetail 형식으로 반환한다. 정확한 요청·응답 예제는 테스트로 생성한 `/docs/index.html`에서 확인한다.
+- 그 밖의 통합 시나리오·동시성 테스트는 사람이 명확히 지시할 때만 작성한다.
+- ArchUnit·detekt 규칙과 fixture 테스트는 구조·규칙 단위 검사로 기본 빌드에 유지한다. 범위 밖 테스트를 `@Disabled`·태그 제외로 남기지 않는다.
 
-주문 BC에는 Offer와 Order가 있고 재고 BC에는 StockItem이 있다. 판매 가능 품목과 실물 보유량은 독립적으로 등록한다. 주문은 재고를 조회·확인·예약하지 않는다.
+## API 변경
 
-- `POST /api/offers`: `{"sku":"BOOK-001"}`로 `ON_SALE` 판매품목을 등록하고 `201 Created`와 UUID 기반 `Location`을 반환한다. 같은 SKU는 `409`다.
-- `GET /api/offers/{id}`: 판매품목을 조회한다. 미등록 UUID는 `404`다.
-- `PATCH /api/offers/{id}/discontinue`: `DISCONTINUED`로 바꾼다. 반복 중단은 같은 상태를 반환하며 기존 주문을 변경하지 않는다.
-- `POST /api/orders`: `{"lines":[{"sku":"BOOK-001","quantity":3}]}`으로 `PLACED` 주문을 만들고 `201 Created`와 `Location`을 반환한다. 품목은 1~10개, SKU는 주문 안에서 유일하며 수량은 품목별 1~100이다. Offer 조회 시점에 미등록·판매 중단 SKU가 있으면 `409`다.
-- `GET /api/orders/{id}`: 주문을 조회한다. 없으면 `404`를 반환한다.
-- `PATCH /api/orders/{id}/cancel`: 주문을 `CANCELLED`로 바꾸고 `200`을 반환한다. 반복 취소는 같은 상태를 반환한다.
-
-- `POST /api/inventory/items`: `{"sku":"BOOK-001","onHand":5}`로 재고 품목을 등록하고 `201 Created`와 `Location`을 반환한다. 이미 등록한 SKU는 `409`다.
-- `GET /api/inventory/items/{sku}`: 품목을 조회한다. 미등록 SKU는 `404`다.
-- `POST /api/inventory/items/{sku}/restock`: `{"quantity":3}`으로 양수 수량을 입고한다.
-
-주문 응답 필드는 `id`, `lines`(각 품목의 `sku`, `quantity`), `status`, `placedAt`이다. 판매품목은 `id`, `sku`, `status`, 재고는 `sku`, `onHand`를 반환한다. 잘못된 값은 `400`을 ProblemDetail 형식으로 반환한다. 주문의 품목은 접수 후 변경하지 않는다. Offer를 읽은 직후 판매 중단이 커밋돼도 이미 읽은 상태로 주문을 접수하는 경합은 허용한다. 경계와 판정 시점은 [어그리게이트와 BC 경계](ddd-architecture.md)에 있다.
-
-인증·인가와 사용자별 데이터 분리는 이 예제에 포함하지 않는다. 실제 사용자 데이터를 취급하기 전에 서비스의 접근 제어를 구현한다.
-
-## 기능 추가 순서
-
-먼저 [경계 선정 절차](ddd-architecture.md#새-기능을-분류하는-절차)로 소유 BC·어그리게이트와 불변식·생명주기를 정한다. 새 경계와 일관성 계약 변경은 판단 근거를 남기며, 명사·테이블·화면 개수로 경계를 추측하지 않는다.
-
-1. `<bc>/domain/<aggregate>`에 비즈니스 규칙을 작성한다. Todo 예제는 `todo/domain/todo`에 있다. 루트는 `@AggregateRoot`로 표시하고 생성·복원·상태 전이를 구분한다. 이 계층에는 Spring, Exposed, HTTP 의존성을 넣지 않는다.
-2. `application/port/input`에 유스케이스 계약, `application/port/output`에 필요한 외부 의존성 계약을 추가한다. 포트도 Spring·Exposed에 의존하지 않는다.
-3. `application/service`에서 유스케이스를 구현한다. DB는 출력 포트로 호출하고 업무 단위 트랜잭션은 Spring `@Transactional`로 선언한다. Spring 의존성은 `org.springframework.transaction.annotation`의 `Transactional`과 선언 옵션 타입 `Propagation`·`Isolation` 세 타입만 허용한다.
-4. `adapter/inbound/<group>`에서 진입점과 입력 검증을, `adapter/outbound/<group>`에서 외부 기능을 구현한다. HTTP 예제는 `web`, Exposed 예제는 `persistence` 그룹을 사용한다. 기능 경로와 포트 역할 경로는 [패키지 경계](code-quality.md#하위-패키지와-기능-경계)에 맞춘다.
-5. `config`에서 구현체를 연결한다. 새 BC·루트는 `HexagonalArchitectureTest.contextAggregates`와 경계 문서에 등록하고, 입력 유스케이스와 출력 어댑터의 계약을 테스트한다.
-
-Exposed의 행, 테이블, 트랜잭션 타입을 도메인이나 포트로 반환하지 않는다. 도메인 모델로 변환한 뒤 어댑터 밖으로 전달한다.
-
-다른 BC의 도메인·애플리케이션 타입은 코어에서 직접 참조하지 않는다. 같은 BC의 애플리케이션 서비스는 여러 저장소를 사용할 수 있지만, 도메인 모델은 다른 어그리게이트 루트 객체 대신 ID·불변 값으로 참조한다. 루트 공용 도메인에 업무 값을 옮겨 공유하지 않는다. 어그리게이트·출력 포트의 소유권과 자동 검사의 한계는 [DDD 경계](code-quality.md#어그리게이트와-ddd-경계)와 [BC 경계](code-quality.md#bc-경계)를 따른다.
-
-운영 코드의 주입은 생성자 `private val`로 한다. 함수 크기·인자·중첩·이름·금지 문법과 좁은 예외는 [코드 품질 규칙](code-quality.md)을 따른다. 제한을 맞추기 위해 의미 없는 함수나 인자 묶음 객체를 만들지 않는다.
-
-가상 스레드는 JDBC의 블로킹 작업을 처리하는 실행 방식이다. DB 연결 풀을 무한히 늘리지 않으며, 트래픽에 맞는 연결 풀 크기와 쿼리 성능은 별도로 조정해야 한다.
-
-## 트랜잭션
-
-`exposed-spring-boot4-starter:1.5.0`의 자동 설정이 Spring 7용 Exposed `SpringTransactionManager`를 `springTransactionManager` 빈으로 등록한다. 애플리케이션의 `Database`와 트랜잭션 매니저를 별도로 중복 구성하지 않는다. 저장소는 `transaction {}` 없이 Exposed DSL을 사용해 유스케이스의 트랜잭션에 참여한다. [Exposed Spring 통합](https://www.jetbrains.com/help/exposed/spring-boot-integration.html)
-
-`TodoService`, `OrderService`, `OfferService`, `StockService`의 기본값은 `@Transactional(readOnly = true)`다. 쓰기 메서드는 `@Transactional`로 재정의한다. 주문 취소·판매 중단·재고 변경의 행 잠금·조회·저장은 해당 서비스의 쓰기 트랜잭션에서 실행한다. 기본 전파 방식 `REQUIRED`는 이미 열린 트랜잭션이 있으면 참여한다.
-
-- **관리되는 빈을 호출한다.** `config`의 `@Bean`으로 조립된 유스케이스를 주입받아 호출한다. 직접 만든 객체나 같은 객체 내부 호출은 프록시를 통과하지 않아 새 트랜잭션 경계를 만들지 않는다. [Spring 프록시 동작](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html)
-- **읽기 전용은 접근 제어가 아니다.** `readOnly`는 DB·드라이버에 전달하는 힌트다. 데이터 변경을 막는 보안 장치로 사용하지 않는다.
-- **롤백 조건을 명시한다.** 기본 정책은 `RuntimeException`과 `Error`를 롤백한다. SQL 오류가 아닌 checked 예외도 롤백해야 한다면 `rollbackFor`로 계약을 명시하고 테스트한다. Kotlin이 checked 예외 선언을 강제하지 않아도 이 구분은 유지된다. [Spring 롤백 규칙](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/rolling-back.html)
-- **같은 스레드에서 완료한다.** JDBC 트랜잭션 안에서 비동기 실행이나 코루틴 디스패처 전환으로 작업을 넘기지 않는다. 가상 스레드를 사용해도 Spring의 JDBC 트랜잭션은 실행 스레드에 연결된다.
-
-Order의 헤더와 모든 품목은 하나의 어그리게이트이므로 함께 커밋하거나 롤백한다. Order 생성은 Offer를 읽지만 Offer를 변경하지 않는다. 여러 루트의 쓰기가 원자적이어야 하는 요구는 [경계 선정 절차](ddd-architecture.md#새-기능을-분류하는-절차)에 따라 먼저 재검토한다. 선택한 트랜잭션의 실제 커밋·중간 실패 시 전체 롤백을 테스트하며, 테스트 자체의 자동 롤백으로 결과를 가리지 않고 새 연결에서 저장 상태를 확인한다. 유스케이스에 트랜잭션 매니저나 `TransactionTemplate`을 주입하거나 별도 데코레이터를 추가하지 않는다.
-
-트랜잭션 범위는 유스케이스가, 업무 불변식은 어그리게이트 루트가 정한다. 한 트랜잭션에서 무엇을 함께 바꿀지는 정적 검사가 아니라 유스케이스 설계와 리뷰에서 판단한다.
+- `*ApiDocumentationTest`에서 입력 포트를 MockK로 대체하고 MockMvc로 실제 컨트롤러·요청 검증·직렬화·예외 변환의 요청·응답·상태 코드와 필요한 검증 오류·없는 리소스 응답을 검증한다. DB와 서비스 구현을 연결하지 않는다.
+- API 변경과 함께 REST Docs 필드 설명을 수정하고 `src/docs/asciidoc/index.adoc`에 생성 스니펫을 연결한다.
+- HTTP 상세를 README·개발 가이드에 재작성하지 않는다. 업무 규칙은 [아키텍처 문서](ddd-architecture.md#예제의-업무-규칙)에서 관리한다.
+- `build/generated-snippets`와 `build/docs/asciidoc/index.html`을 직접 편집하지 않는다.
+- 생성 문서는 전체 빌드가 만든 `build/docs/asciidoc/index.html`과 `application.jar`의 `BOOT-INF/classes/static/docs/index.html`로 확인한다. 화면으로 볼 때는 `java -jar build/libs/application.jar`로 실행해 `http://localhost:8080/docs/index.html`만 열고 `bootRun`을 사용하지 않는다. 이 확인은 HTTP 업무 시나리오 검증이 아니다.
 
 ## 스키마 변경
 
-`src/main/resources/db/migration`에 `V5__describe_change.sql`처럼 다음 버전의 Flyway SQL을 추가한다. V1은 Todo, V2는 단일 품목 주문, V3는 재고이며 파일 내용은 보존한다. V4는 판매품목과 주문 품목 테이블을 추가하고 기존 주문의 SKU·수량을 품목 한 행으로 옮긴 뒤 헤더의 두 열을 제거한다. 과거 주문으로 판매 가능 여부를 추정하지 않으므로 Offer는 자동 생성하지 않는다. 기존 주문은 조회·취소할 수 있고 새 주문에는 먼저 Offer를 등록해야 한다. 이미 배포된 버전은 새 마이그레이션으로 변경한다.
+- `src/main/resources/db/migration`의 마지막 버전 다음 번호로 `V<번호>__describe_change.sql`을 추가한다. 배포된 마이그레이션은 수정하지 않는다.
+- Flyway로만 DDL을 적용하고 `spring.exposed.generate-ddl=false`를 유지한다.
+- 기존 데이터 변환·새 제약의 테스트 작성 여부와 방식은 [테스트 범위](#테스트-범위)를 따른다. 여러 저장 작업에는 [트랜잭션 계약](ddd-architecture.md#트랜잭션)을 적용한다.
+- V1~V3에서 V4로 업그레이드할 때 기존 주문의 SKU·수량과 조회·취소 동작을 보존한다. 과거 주문에서 Offer를 자동 생성하지 않는다.
+- 배포하지 않은 과거 이벤트 초안 V2~V5를 적용한 개인 개발 DB에서 체크섬·스키마 충돌이 나면 필요한 데이터를 백업한 뒤 해당 DB만 다시 만든다. 자동 초기화하지 않는다.
 
-이전 이벤트 구현 때의 배포하지 않은 초안(V2~V5)을 개인 로컬 DB에 적용했다면 체크섬·스키마가 달라 시작에 실패할 수 있다. 이 경우 필요한 데이터를 백업한 뒤 해당 개발 DB를 다시 만들며 자동 초기화는 제공하지 않는다. 직전의 이벤트 없는 V1~V3 스키마는 V4로 정상 업그레이드한다.
+## 실행과 검증
 
-스키마는 Flyway만 관리한다. Exposed 스타터의 자동 DDL 생성을 끄는 `spring.exposed.generate-ddl=false`를 유지한다.
-
-기본 통합 테스트는 H2에서 실행한다. PostgreSQL 전용 SQL, 인덱스, 타입, 잠금 동작을 추가하면 PostgreSQL에서도 해당 변경을 검증한다. H2 테스트 통과만으로 PostgreSQL 호환성이 보장되지는 않는다.
-
-## REST Docs 갱신
-
-`TodoApiDocumentationTest`, `OrderApiDocumentationTest`, `OfferApiDocumentationTest`, `StockApiDocumentationTest`는 실제 애플리케이션, Flyway, H2와 MockMvc를 사용한다. API 계약을 바꿀 때 요청·응답 검증과 REST Docs 필드 설명을 함께 갱신한다.
+로컬 앱이 필요할 때 실행한다. 앱 실행은 테스트 검증 절차에 포함하지 않는다.
 
 ```sh
-./gradlew :test --tests '*ApiDocumentationTest'
-./gradlew build
-java -jar build/libs/application.jar
+java -version
+./gradlew bootRun
 ```
 
-`src/docs/asciidoc/index.adoc`가 스니펫을 조합한다. `build/generated-snippets`와 생성 HTML은 빌드 결과물이므로 직접 수정하지 않는다. `build` 결과 JAR 실행 후 `http://localhost:8080/docs/index.html`에서 확인한다.
+변경에 해당하는 검증을 먼저 실행한다. 애플리케이션 테스트를 선별할 때는 `:test` 태스크를 지정한다.
 
-새 엔드포인트는 성공 응답뿐 아니라 요구사항에 필요한 검증 오류와 없는 리소스 응답도 테스트한다. 문서에서 소개하는 필드가 실제 API 응답과 일치해야 한다.
+- 도메인·유스케이스: `./gradlew :test --tests '*OrderServiceTest'`처럼 대상 테스트를 지정한다.
+- RDB 어댑터: `./gradlew :test --tests '*ExposedOrderRepositoryTest'`처럼 대상 어댑터 테스트를 지정한다.
+- HTTP·문서: `./gradlew :test --tests '*ApiDocumentationTest'`.
+- 형식: 수정은 `./gradlew ktlintFormat`, 확인은 `./gradlew ktlintCheck`.
+- 검사 규칙: `./gradlew detektMain detektTest`, `./gradlew :quality-rules:test`. [검사기 지침](quality-maintenance.md)의 회귀 범위도 확인한다.
+- 배포 스크립트: [배포 없이 검증](deployment.md#배포-없이-검증)의 Python 테스트도 실행한다.
 
-## 코드 품질과 검증
+마지막에 전체 빌드와 diff를 확인한다.
 
 ```sh
-./gradlew ktlintFormat
-./gradlew ktlintCheck
-./gradlew detektMain detektTest
-./gradlew :quality-rules:test
-./gradlew :test --tests '*TodoServiceTest'
 ./gradlew build
+git diff --check
 git diff
 ```
 
-빌드 설정은 `org.jlleitschuh.gradle.ktlint.tasks.KtLintCheckTask`에 자동 포맷 의존성을 지정한다. 컴파일·테스트·빌드 전에 수정 가능한 스타일 위반을 수정하고 남은 위반을 검사한다. 검증 실행도 작업 트리의 파일을 바꿀 수 있다.
+- 전체 빌드의 규칙 테스트·REST Docs 생성을 생략하지 않는다.
+- 검증 후 ktlint 자동 수정도 검토한다. 커밋할 때 자동 수정 파일을 빠뜨리지 않는다.
+- 실패 시 `build/reports/tests/test/`, `build/reports/detekt/`, `quality-rules/build/reports/tests/test/`를 확인한다.
 
-`test`, `check`, `build`는 타입 분석을 사용하는 `detektMain`, `detektTest`를 포함하며 `./gradlew detekt`도 두 태스크를 실행한다. `:quality-rules:test`는 사용자 정의 규칙의 허용·위반 fixture를 검사하고 전체 `build`에도 포함된다. detekt 보고서는 `build/reports/detekt/`에서 확인한다. CI는 빌드 후 `git diff --exit-code`로 포맷 변경까지 검사하므로 로컬 자동 수정 결과를 커밋해야 한다.
+## 템플릿 적용
 
-금지한 억제 문자열은 detekt의 `ForbiddenSuppress`로 검사하며, 허용한 예외의 위치와 사유는 리뷰한다. `quality-rules`는 분석 전에 로드할 detekt 규칙 JAR를 별도로 컴파일하는 빌드 전용 모듈이다. 실행 JAR에는 포함하지 않으며 ktlint와 자체 fixture로 검증한다. [검사 범위](code-quality.md#검사-도구와-실행)를 참고한다.
-
-도메인·유스케이스 단위 테스트는 규칙과 호출 계약을, API 통합 테스트는 HTTP·저장·문서를, `HexagonalArchitectureTest`는 계층 간 의존 경계를 검사한다. 변경 범위에 맞는 테스트를 먼저 실행하고 마지막에 전체 `build`를 실행한다.
-
-검사 실패를 baseline, 사유 없는 `@Suppress`, 경로 제외, `ignoreFailures`로 숨기지 않는다. 예외는 개별 선언·규칙·이유를 기록하고 리뷰한다. 검사 설정이나 사용자 정의 규칙을 변경하면 정상·위반·경계값 fixture도 함께 검증한다. GitHub의 실제 병합 차단은 [ruleset 활성화 절차](code-quality.md#github에서-병합-차단-활성화)를 따른다.
-
-## 프로젝트 이름 변경
-
-`settings.gradle.kts`의 프로젝트 이름과 `com.example.template` 패키지를 서비스 이름으로 바꿀 수 있다. 소스·테스트의 패키지 선언, 경로, 아키텍처 검사 기준, 애플리케이션 설정의 이름을 함께 확인한다.
-
-컨테이너 빌드가 사용하는 JAR 이름은 `application.jar`다. 이름을 바꾸려면 Gradle, Dockerfile, `.dockerignore`의 허용 경로, `.github/workflows/ci.yml`의 아티팩트 업로드 경로를 함께 수정한다. 배포 식별자는 GitHub 저장소 메타데이터에서 생성하므로 Kotlin 패키지 이름에 의존하지 않는다.
+1. [Use this template](https://github.com/robinjoon-homelab/kotlin-springboot-exposed-template/generate)로 서비스 저장소를 만들고 복제한다. 첫 `main`·`master` 푸시 전에 [배포 전 설정](deployment.md#배포-전-설정)을 끝낸다.
+2. 프로젝트명·패키지를 바꾸면 `settings.gradle.kts`, 소스·테스트의 선언·경로, `HexagonalArchitectureTest`의 `ROOT`와 시작 클래스 단언, 애플리케이션 이름을 함께 변경한다. 시작 클래스명을 바꾸면 `ArchitectureRules`의 `applicationClass` 인자도 맞춘다.
+3. 공용 배포 파일과 `application.jar` 이름을 유지하고 앱 이름·이미지 경로는 [배포 변수](deployment.md#배포-이름과-이미지-설정)로 지정한다.
+4. `./gradlew build`로 확인한다.

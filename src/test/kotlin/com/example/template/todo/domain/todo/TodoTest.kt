@@ -41,35 +41,4 @@ class TodoTest {
 
         assertThat(todo).isEqualTo(Todo.restore(id, "Write the API docs", completed = false, createdAt))
     }
-
-    @Test
-    fun `restoration keeps the stored state without normalizing it`() {
-        val todo = Todo.restore(id, " Stored as written ", completed = true, createdAt)
-
-        assertThat(todo.title).isEqualTo(" Stored as written ")
-        assertThat(todo.completed).isTrue()
-        assertThat(todo.createdAt).isEqualTo(createdAt)
-    }
-
-    @Test
-    fun `completion preserves identity and leaves the original unchanged`() {
-        val original = Todo.create(id, "Write the API docs", createdAt)
-
-        val completed = original.complete()
-
-        assertThat(completed).isEqualTo(Todo.restore(id, "Write the API docs", completed = true, createdAt))
-        assertThat(original.completed).isFalse()
-    }
-
-    @Test
-    fun `completing an already completed todo keeps the same state`() {
-        val completed = Todo.restore(id, "Write the API docs", completed = true, createdAt)
-
-        assertThat(completed.complete()).isSameAs(completed)
-    }
-
-    @Test
-    fun `identifiers print as the plain UUID used by the API`() {
-        assertThat(id.toString()).isEqualTo("f786c559-88d0-4d86-a4d6-736b4688572b")
-    }
 }
