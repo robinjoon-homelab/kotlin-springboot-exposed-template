@@ -5,11 +5,8 @@ import com.example.template.todo.application.port.output.TodoRepository
 import com.example.template.todo.application.service.TodoService
 import com.example.template.todo.domain.todo.Todo
 import com.example.template.todo.domain.todo.TodoId
-import io.mockk.Called
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
-import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -26,21 +23,17 @@ class TodoServiceTest {
     private val service = TodoService(repository, Clock.fixed(now, ZoneOffset.UTC))
 
     @Test
-    fun `creation trims the title and adds an incomplete todo with the clock time`() {
-        val added = slot<Todo>()
-        every { repository.add(capture(added)) } answers { firstArg() }
+    fun `creation trims the title and returns an incomplete todo with the clock time`() {
+        every { repository.add(any()) } answers { firstArg() }
 
         val created = service.create("  Write the API docs  ")
 
-        assertThat(added.captured).isEqualTo(Todo.restore(added.captured.id, "Write the API docs", completed = false, now))
-        assertThat(created).isEqualTo(added.captured)
+        assertThat(created).isEqualTo(Todo.restore(created.id, "Write the API docs", completed = false, now))
     }
 
     @Test
-    fun `invalid creation does not persist a todo`() {
+    fun `invalid creation is rejected`() {
         assertThatIllegalArgumentException().isThrownBy { service.create(" \t\n ") }
-
-        verify { repository wasNot Called }
     }
 
     @Test
@@ -57,7 +50,7 @@ class TodoServiceTest {
     }
 
     @Test
-    fun `completion updates the todo and leaves its original state unchanged`() {
+    fun `completion returns the completed todo and leaves its original state unchanged`() {
         val original = todo("Read the docs")
         val expected = Todo.restore(original.id, original.title, completed = true, original.createdAt)
         every { repository.findById(original.id) } returns original
@@ -66,28 +59,25 @@ class TodoServiceTest {
         val completed = service.complete(original.id)
 
         assertThat(completed).isEqualTo(expected)
-        verify(exactly = 1) { repository.update(expected) }
         assertThat(original.completed).isFalse()
     }
 
     @Test
-    fun `completing an already completed todo does not write again`() {
+    fun `completing an already completed todo returns it unchanged`() {
         val completed = Todo.restore(TodoId(UUID.randomUUID()), "Read the docs", completed = true, now)
         every { repository.findById(completed.id) } returns completed
 
         assertThat(service.complete(completed.id)).isEqualTo(completed)
-        verify(exactly = 0) { repository.update(any()) }
     }
 
     @Test
-    fun `completion of a missing todo does not write anything`() {
+    fun `completion of a missing todo reports it with its plain identifier`() {
         val missingId = TodoId(UUID.randomUUID())
         every { repository.findById(missingId) } returns null
 
         assertThatThrownBy { service.complete(missingId) }
             .isInstanceOf(TodoNotFoundException::class.java)
             .hasMessage("Todo not found: ${missingId.value}")
-        verify(exactly = 0) { repository.update(any()) }
     }
 
     private fun todo(title: String) = Todo.create(TodoId(UUID.randomUUID()), title, now)

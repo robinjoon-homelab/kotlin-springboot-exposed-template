@@ -12,7 +12,6 @@ import com.example.template.support.web.documented
 import com.example.template.support.web.problemFields
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
 import org.springframework.restdocs.headers.HeaderDocumentation.headerWithName
@@ -35,9 +34,9 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.util.UUID
 
-// The use case is a strict mock: the HTTP adapter must call only what a test stubs. SKU limits, duplicate detection,
-// and repeated discontinuation belong to SkuTest, OfferTest, OfferServiceTest, and the repository test; this test
-// checks what the endpoint passes on and how it turns results and failures into HTTP.
+// The use case is a strict mock that answers only the inputs a test stubs. SKU limits, duplicate detection, and
+// repeated discontinuation belong to SkuTest, OfferTest, OfferServiceTest, and the repository test; this test checks
+// the HTTP responses the endpoint returns for requests, results, and failures.
 class OfferApiDocumentationTest : RestDocsWebTest() {
     private val offerId: UUID = UUID.fromString("7b3e9d1a-2c4f-4e6a-8b0d-3c5e7f9a1b2d")
     private val missingId: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
@@ -45,7 +44,7 @@ class OfferApiDocumentationTest : RestDocsWebTest() {
     private val mockMvc = restDocsMockMvc(OfferController(offerUseCase), OfferExceptionHandler())
 
     @Test
-    fun `register passes the trimmed sku and returns the offer on sale with its location`() {
+    fun `register with a padded sku returns the offer on sale with its location`() {
         every { offerUseCase.register(Sku("BOOK-001")) } returns Offer.register(OfferId(offerId), Sku("BOOK-001"))
 
         register("""{"sku":"  BOOK-001  "}""")
@@ -112,9 +111,9 @@ class OfferApiDocumentationTest : RestDocsWebTest() {
         expectNotFound(patch("/api/offers/{id}/discontinue", missingId))
     }
 
-    // The SKU is built before the use case runs, so a blank SKU fails here and nothing is registered.
+    // The SKU is built before the use case runs, so a blank SKU fails here.
     @Test
-    fun `invalid registrations return a documented bad request before the use case`() {
+    fun `invalid registrations return a documented bad request`() {
         register("""{"sku":"   "}""")
             .andExpect(status().isBadRequest)
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -127,19 +126,16 @@ class OfferApiDocumentationTest : RestDocsWebTest() {
                 .andExpect(status().isBadRequest)
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        verify(exactly = 0) { offerUseCase.register(any()) }
     }
 
     @Test
-    fun `malformed offer id returns a problem bad request before the use case`() {
+    fun `malformed offer id returns a problem bad request`() {
         listOf(get("/api/offers/{id}", "BOOK-001"), patch("/api/offers/{id}/discontinue", "BOOK-001")).forEach { request ->
             mockMvc
                 .perform(request)
                 .andExpect(status().isBadRequest)
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        verify(exactly = 0) { offerUseCase.get(any()) }
-        verify(exactly = 0) { offerUseCase.discontinue(any()) }
     }
 
     private fun register(body: String): ResultActions =

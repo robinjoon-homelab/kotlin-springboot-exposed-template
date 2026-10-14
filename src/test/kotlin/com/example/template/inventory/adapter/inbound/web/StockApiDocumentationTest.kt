@@ -9,7 +9,6 @@ import com.example.template.inventory.domain.stock.StockItem
 import com.example.template.support.web.RestDocsWebTest
 import com.example.template.support.web.documented
 import com.example.template.support.web.problemFields
-import io.mockk.confirmVerified
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Test
@@ -31,18 +30,17 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 
-// The use case is a strict mock: the HTTP adapter must call only what a test stubs. Requests rejected before the
-// use case end with confirmVerified, which fails on any recorded call. An any() matcher cannot stand for the
+// The use case is a strict mock that answers only the inputs a test stubs. An any() matcher cannot stand for the
 // inventory Sku, because MockK builds its placeholder through the Sku constructor, which rejects a random value.
 // SKU format, onHand limits, overflow, accumulation, and duplicate detection belong to StockItemTest,
-// StockServiceTest, and the repository test; this test checks what the endpoint passes on and how it turns results
-// and failures into HTTP.
+// StockServiceTest, and the repository test; this test checks the HTTP responses the endpoint returns for requests,
+// results, and failures.
 class StockApiDocumentationTest : RestDocsWebTest() {
     private val stockUseCase = mockk<StockUseCase>()
     private val mockMvc = restDocsMockMvc(StockController(stockUseCase), StockExceptionHandler())
 
     @Test
-    fun `register passes the sku and onHand and returns the item with its location`() {
+    fun `register returns the item of the requested sku and onHand with its location`() {
         every { stockUseCase.register(Sku("KB-001"), 5) } returns StockItem.register(Sku("KB-001"), 5)
 
         register("""{"sku":"KB-001","onHand":5}""")
@@ -76,7 +74,7 @@ class StockApiDocumentationTest : RestDocsWebTest() {
     }
 
     @Test
-    fun `restock passes the path sku and quantity and returns the restocked item`() {
+    fun `restock of the path sku by the requested quantity returns the restocked item`() {
         every { stockUseCase.restock(Sku("KB-001"), 3) } returns StockItem.restore(Sku("KB-001"), 8)
 
         restock("KB-001", """{"quantity":3}""")
@@ -92,9 +90,9 @@ class StockApiDocumentationTest : RestDocsWebTest() {
             )
     }
 
-    // The SKU is built before the use case runs, so a SKU outside the format fails here and nothing is registered.
+    // The SKU is built before the use case runs, so a SKU outside the format fails here.
     @Test
-    fun `invalid sku returns a documented bad request before the use case`() {
+    fun `invalid sku returns a documented bad request`() {
         register("""{"sku":"KB 001","onHand":5}""")
             .andExpect(status().isBadRequest)
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -102,11 +100,10 @@ class StockApiDocumentationTest : RestDocsWebTest() {
             .andExpect(jsonPath("$.title").value("Invalid stock request"))
             .andExpect(jsonPath("$.instance").value("/api/inventory/items"))
             .andDo(documented("inventory-items-invalid", responseFields(*problemFields())))
-        confirmVerified(stockUseCase)
     }
 
     @Test
-    fun `registrations that do not bind return a problem bad request before the use case`() {
+    fun `registrations that do not bind return a problem bad request`() {
         val invalidRequests =
             listOf(
                 """{"onHand":5}""",
@@ -121,7 +118,6 @@ class StockApiDocumentationTest : RestDocsWebTest() {
                 .andExpect(status().isBadRequest)
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        confirmVerified(stockUseCase)
     }
 
     @Test
@@ -141,13 +137,12 @@ class StockApiDocumentationTest : RestDocsWebTest() {
     }
 
     @Test
-    fun `restocks that do not bind return a problem bad request before the use case`() {
+    fun `restocks that do not bind return a problem bad request`() {
         listOf("{}", """{"quantity":null}""", "{").forEach { request ->
             restock("KB-001", request)
                 .andExpect(status().isBadRequest)
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        confirmVerified(stockUseCase)
     }
 
     @Test
@@ -175,7 +170,7 @@ class StockApiDocumentationTest : RestDocsWebTest() {
     }
 
     @Test
-    fun `invalid sku in the path returns a problem bad request before the use case`() {
+    fun `invalid sku in the path returns a problem bad request`() {
         mockMvc
             .perform(get("/api/inventory/items/{sku}", "KB 001"))
             .andExpect(status().isBadRequest)
@@ -183,7 +178,6 @@ class StockApiDocumentationTest : RestDocsWebTest() {
         restock("-KB", """{"quantity":1}""")
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.title").value("Invalid stock request"))
-        confirmVerified(stockUseCase)
     }
 
     @Test

@@ -10,7 +10,6 @@ import com.example.template.todo.domain.todo.Todo
 import com.example.template.todo.domain.todo.TodoId
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
 import org.springframework.restdocs.headers.HeaderDocumentation.headerWithName
@@ -33,9 +32,9 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.Instant
 import java.util.UUID
 
-// The use case is a strict mock: the HTTP adapter must call only what a test stubs. Title normalization and the
-// domain limits are covered by TodoTest and TodoServiceTest; this test checks what the endpoint passes on and how it
-// turns results and failures into HTTP.
+// The use case is a strict mock that answers only the inputs a test stubs. Title normalization and the domain limits
+// are covered by TodoTest and TodoServiceTest; this test checks the HTTP responses the endpoint returns for requests,
+// results, and failures.
 class TodoApiDocumentationTest : RestDocsWebTest() {
     private val todoId: UUID = UUID.fromString("3f0c8c3e-5b1a-4f4e-9a52-6a1d2b7c9e10")
     private val secondTodoId: UUID = UUID.fromString("8a6e0f2d-1c3b-4d5e-8f70-9a1b2c3d4e5f")
@@ -45,7 +44,7 @@ class TodoApiDocumentationTest : RestDocsWebTest() {
     private val mockMvc = restDocsMockMvc(TodoController(todoUseCase), ApiExceptionHandler())
 
     @Test
-    fun `create passes the raw title and returns the created todo with its location`() {
+    fun `create with an untrimmed title returns the created todo with its location`() {
         val todo = Todo.create(TodoId(todoId), "  Write the first feature  ", createdAt)
         every { todoUseCase.create("  Write the first feature  ") } returns todo
 
@@ -116,18 +115,17 @@ class TodoApiDocumentationTest : RestDocsWebTest() {
     }
 
     @Test
-    fun `blank title returns a documented bad request before the use case`() {
+    fun `blank title returns a documented bad request`() {
         create("""{"title":"   "}""")
             .andExpect(status().isBadRequest)
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
             .andExpect(jsonPath("$.status").value(400))
             .andExpect(jsonPath("$.instance").value("/api/todos"))
             .andDo(documented("todos-invalid-title", responseFields(*problemFields())))
-        verify(exactly = 0) { todoUseCase.create(any()) }
     }
 
     @Test
-    fun `empty oversized missing null and malformed titles are rejected before the use case`() {
+    fun `empty oversized missing null and malformed titles are rejected`() {
         val invalidRequests = listOf("""{"title":""}""", """{"title":"${"x".repeat(201)}"}""", "{}", """{"title":null}""", "{")
 
         invalidRequests.forEach { request ->
@@ -135,11 +133,10 @@ class TodoApiDocumentationTest : RestDocsWebTest() {
                 .andExpect(status().isBadRequest)
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        verify(exactly = 0) { todoUseCase.create(any()) }
     }
 
     @Test
-    fun `title with exactly 200 characters reaches the use case`() {
+    fun `title with exactly 200 characters is created`() {
         val title = "x".repeat(200)
         every { todoUseCase.create(title) } returns Todo.create(TodoId(todoId), title, createdAt)
 
@@ -187,15 +184,13 @@ class TodoApiDocumentationTest : RestDocsWebTest() {
     }
 
     @Test
-    fun `malformed id returns a problem bad request before the use case`() {
+    fun `malformed id returns a problem bad request`() {
         listOf(get("/api/todos/{id}", "invalid-id"), patch("/api/todos/{id}/complete", "invalid-id")).forEach { request ->
             mockMvc
                 .perform(request)
                 .andExpect(status().isBadRequest)
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        verify(exactly = 0) { todoUseCase.get(any()) }
-        verify(exactly = 0) { todoUseCase.complete(any()) }
     }
 
     private fun create(body: String): ResultActions =

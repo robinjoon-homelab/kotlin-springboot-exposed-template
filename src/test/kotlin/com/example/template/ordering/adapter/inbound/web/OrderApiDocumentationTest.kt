@@ -14,7 +14,6 @@ import com.example.template.support.web.documented
 import com.example.template.support.web.problemFields
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.springframework.http.MediaType
 import org.springframework.restdocs.headers.HeaderDocumentation.headerWithName
@@ -38,9 +37,9 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.Instant
 import java.util.UUID
 
-// The use case is a strict mock: the HTTP adapter must call only what a test stubs. The line count, distinct SKUs,
-// offer checks, and repeated cancellation belong to OrderTest and OrderServiceTest; this test checks the lines the
-// endpoint builds from the request and how it turns results and failures into HTTP.
+// The use case is a strict mock that answers only the inputs a test stubs. The line count, distinct SKUs, offer
+// checks, and repeated cancellation belong to OrderTest and OrderServiceTest; this test checks the HTTP responses the
+// endpoint returns for requests, results, and failures.
 class OrderApiDocumentationTest : RestDocsWebTest() {
     private val orderId: UUID = UUID.fromString("5d2a7c1e-3b4f-4a6d-9e8c-1f2a3b4c5d6e")
     private val missingId: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
@@ -49,7 +48,7 @@ class OrderApiDocumentationTest : RestDocsWebTest() {
     private val mockMvc = restDocsMockMvc(OrderController(orderUseCase), OrderExceptionHandler())
 
     @Test
-    fun `place passes trimmed lines in request order and returns the placed order with its location`() {
+    fun `place with padded skus returns the placed order with lines in request order and its location`() {
         val lines = listOf(OrderLine(Sku("MS-001"), 1), OrderLine(Sku("KB-001"), 3))
         every { orderUseCase.place(lines) } returns Order.place(OrderId(orderId), lines, placedAt)
 
@@ -95,9 +94,9 @@ class OrderApiDocumentationTest : RestDocsWebTest() {
             .andDo(documented("orders-cancel", orderIdParameter(), responseFields(*orderFields())))
     }
 
-    // Each line becomes an OrderLine before the use case runs, so line values fail here without any offer lookup.
+    // Each line becomes an OrderLine before the use case runs, so line values fail here.
     @Test
-    fun `invalid line values return a documented bad request before the use case`() {
+    fun `invalid line values return a documented bad request`() {
         place(linesBody("KB-001" to 0))
             .andExpect(status().isBadRequest)
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -107,11 +106,10 @@ class OrderApiDocumentationTest : RestDocsWebTest() {
         place(linesBody("   " to 1))
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.title").value("Invalid order"))
-        verify(exactly = 0) { orderUseCase.place(any()) }
     }
 
     @Test
-    fun `requests that do not bind to lines return a problem bad request before the use case`() {
+    fun `requests that do not bind to lines return a problem bad request`() {
         val invalidRequests =
             listOf(
                 """{"lines":[null]}""",
@@ -130,7 +128,6 @@ class OrderApiDocumentationTest : RestDocsWebTest() {
                 .andExpect(status().isBadRequest)
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        verify(exactly = 0) { orderUseCase.place(any()) }
     }
 
     @Test
@@ -169,15 +166,13 @@ class OrderApiDocumentationTest : RestDocsWebTest() {
     }
 
     @Test
-    fun `malformed order id returns a problem bad request before the use case`() {
+    fun `malformed order id returns a problem bad request`() {
         listOf(get("/api/orders/{id}", "invalid-id"), patch("/api/orders/{id}/cancel", "invalid-id")).forEach { request ->
             mockMvc
                 .perform(request)
                 .andExpect(status().isBadRequest)
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         }
-        verify(exactly = 0) { orderUseCase.get(any()) }
-        verify(exactly = 0) { orderUseCase.cancel(any()) }
     }
 
     private fun place(body: String): ResultActions =

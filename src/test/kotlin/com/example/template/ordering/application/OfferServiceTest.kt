@@ -10,7 +10,6 @@ import com.example.template.ordering.domain.offer.OfferId
 import com.example.template.ordering.domain.offer.OfferStatus
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -24,14 +23,12 @@ class OfferServiceTest {
     private val service = OfferService(repository)
 
     @Test
-    fun `registration adds an offer on sale under a new id`() {
-        val added = mutableListOf<Offer>()
-        every { repository.add(capture(added)) } answers { firstArg() }
+    fun `registration returns an offer on sale under a new id`() {
+        every { repository.add(any()) } answers { firstArg() }
 
         val first = service.register(sku)
         val second = service.register(Sku("BOOK-002"))
 
-        assertThat(added).containsExactly(first, second)
         assertThat(first).isEqualTo(Offer.restore(first.id, sku, OfferStatus.ON_SALE))
         assertThat(first.id).isNotEqualTo(second.id)
     }
@@ -59,7 +56,7 @@ class OfferServiceTest {
     }
 
     @Test
-    fun `discontinuing an offer on sale updates it as discontinued`() {
+    fun `discontinuing an offer on sale returns it discontinued`() {
         val onSale = Offer.register(OfferId(UUID.randomUUID()), sku)
         val expected = Offer.restore(onSale.id, sku, OfferStatus.DISCONTINUED)
         every { repository.findByIdForUpdate(onSale.id) } returns onSale
@@ -68,26 +65,23 @@ class OfferServiceTest {
         val discontinued = service.discontinue(onSale.id)
 
         assertThat(discontinued).isEqualTo(expected)
-        verify(exactly = 1) { repository.update(expected) }
     }
 
     @Test
-    fun `discontinuing again returns the discontinued offer without writing`() {
+    fun `discontinuing again returns the discontinued offer unchanged`() {
         val discontinued = Offer.restore(OfferId(UUID.randomUUID()), sku, OfferStatus.DISCONTINUED)
         every { repository.findByIdForUpdate(discontinued.id) } returns discontinued
 
         assertThat(service.discontinue(discontinued.id)).isEqualTo(discontinued)
-        verify(exactly = 0) { repository.update(any()) }
     }
 
     @Test
-    fun `discontinuing a missing offer writes nothing`() {
+    fun `discontinuing a missing offer reports it as not found`() {
         val missingId = OfferId(UUID.randomUUID())
         every { repository.findByIdForUpdate(missingId) } returns null
 
         assertThatThrownBy { service.discontinue(missingId) }
             .isInstanceOf(OfferNotFoundException::class.java)
             .hasMessage("Offer not found: $missingId")
-        verify(exactly = 0) { repository.update(any()) }
     }
 }

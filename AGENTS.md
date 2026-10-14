@@ -11,7 +11,7 @@
 - **애플리케이션 코드 변경:** [기능 변경](docs/development.md#기능-변경), [패키지 배치](docs/ddd-architecture.md#패키지-배치), [의존 규칙](docs/ddd-architecture.md#의존-규칙), [빈 조립](docs/ddd-architecture.md#의존성-주입과-빈-조립), [코드 작성 규칙](docs/code-quality.md).
 - **모델·업무 규칙·일관성 변경:** [경계 선정](docs/ddd-architecture.md#새-기능을-분류하는-절차)과 [현재 업무 전제](docs/ddd-architecture.md#예제의-업무-규칙)를 확인한다. DB 업무는 [트랜잭션 계약](docs/ddd-architecture.md#트랜잭션)도 적용한다.
 - **HTTP 계약 변경:** [API 변경](docs/development.md#api-변경). 정확한 요청·응답은 REST Docs 테스트와 생성 문서에서 확인한다.
-- **테스트 작성·변경:** [테스트 범위](docs/development.md#테스트-범위). 통합·동시성 테스트는 사람이 대상과 의도를 지시할 때만 작성한다.
+- **테스트 작성·변경:** [테스트 대상·결과 검증·허용 범위](docs/development.md#테스트-범위)를 따른다. 통합·동시성 테스트는 사람이 대상과 의도를 지시할 때만 작성한다.
 - **DB 변경:** [스키마 변경](docs/development.md#스키마-변경). 기존 데이터와 배포된 마이그레이션을 보존한다.
 - **검사기·빌드 연결 변경:** [검사기 유지보수](docs/quality-maintenance.md).
 - **CI·배포·저장소 등록, 앱 포트·DB 환경변수·배포 이름·도메인 변경:** [배포 계약](docs/deployment.md)과 [워크플로](.github/workflows/ci.yml)를 함께 확인한다. 실제 원격 반영과 로컬 검증을 구분한다.
