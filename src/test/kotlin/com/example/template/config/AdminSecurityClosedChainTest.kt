@@ -26,6 +26,15 @@ class AdminSecurityClosedChainTest
             mockMvc.perform(get(path)).andExpect(status().isForbidden)
         }
 
+        // MockMvc performs no error dispatch, so the reason is what tells sendError from setStatus.
+        @Test
+        fun `anonymous rejection reaches the error page`() {
+            mockMvc
+                .perform(get("/admin/probe"))
+                .andExpect(status().isForbidden)
+                .andExpect(status().reason("Forbidden"))
+        }
+
         @Test
         fun `form login is forbidden without credentials`() {
             mockMvc
