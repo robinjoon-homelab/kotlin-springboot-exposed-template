@@ -79,6 +79,18 @@ class UiKitManifestTest {
     }
 
     @Test
+    fun `ignores finder metadata in kit directories`(
+        @TempDir root: Path,
+    ) {
+        writeKit(root)
+        write(root, "config/ui/.DS_Store", "finder\n")
+        write(root, "src/main/resources/templates/error/.DS_Store", "finder\n")
+
+        assertThat(UiKitManifest.differences(root)).isEmpty()
+        assertThat(UiKitManifest.render(root)).doesNotContain(".DS_Store")
+    }
+
+    @Test
     fun `fails when the manifest is missing or empty`(
         @TempDir root: Path,
     ) {
@@ -109,6 +121,10 @@ class UiKitManifestTest {
     fun `the repository kit matches its manifest`() {
         val differences = UiKitManifest.differences(Path.of("").toAbsolutePath())
 
-        assertThat(differences).describedAs("Run scripts/sync-ui-kit.py --write-manifest: $differences").isEmpty()
+        assertThat(differences)
+            .describedAs(
+                "In the template repository, regenerate with scripts/sync-ui-kit.py --write-manifest. " +
+                    "In an app, restore the kit with scripts/sync-ui-kit.py --source <template checkout>. $differences",
+            ).isEmpty()
     }
 }
