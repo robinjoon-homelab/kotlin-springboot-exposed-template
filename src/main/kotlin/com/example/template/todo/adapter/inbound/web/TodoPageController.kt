@@ -22,7 +22,7 @@ import java.util.UUID
 
 private const val LIST_PATH = "redirect:/admin/todos"
 
-// Failures become flash notices on the list page through the local handlers; the JSON ApiExceptionHandler does not apply here.
+// Domain failures become flash notices on the list page, because these local handlers win over the global ApiExceptionHandler.
 @Controller
 @RequestMapping("/admin/todos")
 class TodoPageController(
