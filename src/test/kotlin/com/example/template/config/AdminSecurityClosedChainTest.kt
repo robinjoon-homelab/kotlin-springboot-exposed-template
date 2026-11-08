@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.formLogin
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
+import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.junit.jupiter.web.SpringJUnitWebConfig
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -54,3 +55,27 @@ class AdminSecurityClosedChainTest
             mockMvc.perform(get("/api/probe")).andExpect(status().isOk)
         }
     }
+
+// A password BCrypt cannot hash must close the admin chain, not stop the context from starting.
+@SpringJUnitWebConfig(AdminSecurityProbeConfig::class)
+@TestPropertySource(properties = ["app.admin.username=admin", "app.admin.password=$OVER_LONG_PASSWORD"])
+class AdminSecurityOverLongPasswordChainTest
+    @Autowired
+    constructor(
+        context: WebApplicationContext,
+    ) {
+        private val mockMvc = securedMockMvc(context)
+
+        @ParameterizedTest
+        @ValueSource(strings = ["/admin/probe", "/docs/probe", "/admin/login"])
+        fun `every protected path is forbidden`(path: String) {
+            mockMvc.perform(get(path)).andExpect(status().isForbidden)
+        }
+
+        @Test
+        fun `api stays open`() {
+            mockMvc.perform(get("/api/probe")).andExpect(status().isOk)
+        }
+    }
+
+private const val OVER_LONG_PASSWORD = "0123456789012345678901234567890123456789012345678901234567890123456789012"
