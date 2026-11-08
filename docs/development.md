@@ -47,7 +47,7 @@
 - API 변경과 함께 REST Docs 필드 설명을 수정하고 `src/docs/asciidoc/index.adoc`에 생성 스니펫을 연결한다.
 - HTTP 상세를 README·개발 가이드에 재작성하지 않는다. 업무 규칙은 [아키텍처 문서](ddd-architecture.md#예제의-업무-규칙)에서 관리한다.
 - `build/generated-snippets`와 `build/docs/asciidoc/index.html`을 직접 편집하지 않는다.
-- 생성 문서는 전체 빌드가 만든 `build/docs/asciidoc/index.html`과 `application.jar`의 `BOOT-INF/classes/static/docs/index.html`로 확인한다. 화면으로 볼 때는 `java -jar build/libs/application.jar`로 실행해 `http://localhost:8080/docs/index.html`만 열고 `bootRun`을 사용하지 않는다. 이 확인은 HTTP 업무 시나리오 검증이 아니다.
+- 생성 문서는 전체 빌드가 만든 `build/docs/asciidoc/index.html`과 `application.jar`의 `BOOT-INF/classes/static/docs/index.html`로 확인한다. 화면으로 볼 때는 `ADMIN_USERNAME`, `ADMIN_PASSWORD`를 일회용 값으로 설정하고 `java -jar build/libs/application.jar`로 실행해 `http://localhost:8080/docs/index.html`만 열어 로그인하고 `bootRun`을 사용하지 않는다. 자격을 설정하지 않으면 `/docs/**`는 [403](frontend.md#관리자-자격과-닫힘-동작)이다. 이 확인은 HTTP 업무 시나리오 검증이 아니다.
 
 ## 스키마 변경
 
@@ -73,6 +73,7 @@ java -version
 - HTTP·문서: `./gradlew :test --tests '*ApiDocumentationTest'`.
 - 형식: 수정은 `./gradlew ktlintFormat`, 확인은 `./gradlew ktlintCheck`.
 - 검사 규칙: `./gradlew detektMain detektTest`, `./gradlew :quality-rules:test`. [검사기 지침](quality-maintenance.md)의 회귀 범위도 확인한다.
+- 화면: `./gradlew uiCheck`. 포맷 수정은 [화면 검증](frontend.md#검증)을 따른다.
 - 배포 스크립트: [배포 없이 검증](deployment.md#배포-없이-검증)의 Python 테스트도 실행한다.
 
 마지막에 전체 빌드와 diff를 확인한다.
@@ -85,11 +86,12 @@ git diff
 
 - 전체 빌드의 규칙 테스트·REST Docs 생성을 생략하지 않는다.
 - 검증 후 ktlint 자동 수정도 검토한다. 커밋할 때 자동 수정 파일을 빠뜨리지 않는다.
-- 실패 시 `build/reports/tests/test/`, `build/reports/detekt/`, `quality-rules/build/reports/tests/test/`를 확인한다.
+- 실패 시 `build/reports/tests/test/`, `build/reports/detekt/`, `quality-rules/build/reports/tests/test/`를 확인한다. html-validate 실패는 `build/rendered-ui/`의 렌더링 결과를 확인한다.
 
 ## 템플릿 적용
 
 1. [Use this template](https://github.com/robinjoon-homelab/kotlin-springboot-exposed-template/generate)로 서비스 저장소를 만들고 복제한다. 첫 `main`·`master` 푸시 전에 [배포 전 설정](deployment.md#배포-전-설정)을 끝낸다.
 2. 프로젝트명·패키지를 바꾸면 `settings.gradle.kts`, 소스·테스트의 선언·경로, `HexagonalArchitectureTest`의 `ROOT`와 시작 클래스 단언, 애플리케이션 이름을 함께 변경한다. 시작 클래스명을 바꾸면 `ArchitectureRules`의 `applicationClass` 인자도 맞춘다.
 3. 공용 배포 파일과 `application.jar` 이름을 유지하고 앱 이름·이미지 경로는 [배포 변수](deployment.md#배포-이름과-이미지-설정)로 지정한다.
-4. `./gradlew build`로 확인한다.
+4. 메뉴는 `src/main/resources/templates/app/nav.html`, 테마는 `src/main/resources/static/app/theme.css`에서 바꾼다. [화면 지침](frontend.md#토큰-덮어쓰기)을 따른다. 화면이 필요 없으면 [제거 절차](frontend.md#화면이-필요-없는-앱의-제거)를 실행한다.
+5. `./gradlew build`로 확인한다.

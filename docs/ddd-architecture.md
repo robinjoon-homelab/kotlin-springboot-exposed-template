@@ -86,8 +86,10 @@ BC가 정해져도 루트의 소유·생명주기가 미정이면 루트와 테�
 <bc>/application/port/output/        저장소·외부 기능 계약
 <bc>/application/service/            유스케이스 구현
 <bc>/adapter/inbound/<group>/        입력 변환, HTTP는 web
+<bc>/adapter/inbound/web/view/       템플릿에 넘기는 뷰 모델
 <bc>/adapter/outbound/<group>/       외부 구현, Exposed는 persistence
 domain/AggregateRoot.kt              공용 기술 표식
+adapter/inbound/web/                 업무 타입에 의존하지 않는 공용 웹 어댑터
 config/                             빈 조립·기술 설정
 ```
 
