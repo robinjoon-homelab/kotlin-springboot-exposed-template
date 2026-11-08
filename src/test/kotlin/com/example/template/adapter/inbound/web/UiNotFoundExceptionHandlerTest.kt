@@ -3,6 +3,8 @@ package com.example.template.adapter.inbound.web
 import com.example.template.support.web.pageMockMvc
 import jakarta.servlet.http.HttpServletRequest
 import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.not
+import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
@@ -51,6 +53,16 @@ class UiNotFoundExceptionHandlerTest {
     @Test
     fun `api path keeps problem json for browsers`() {
         mockMvc.perform(get("/api/nope").header("Accept", BROWSER_ACCEPT)).expectProblem("/api/nope")
+    }
+
+    // A handler that throws falls through to sendError, so an empty reason is what shows that it answered.
+    @Test
+    fun `malformed accept is treated as non html`() {
+        mockMvc
+            .perform(get("/nope").header("Accept", "not a media type"))
+            .andExpect(status().isNotFound)
+            .andExpect(status().reason(nullValue()))
+            .andExpect(content().string(not(containsString(NOT_FOUND_MESSAGE))))
     }
 
     private fun ResultActions.expectProblem(instance: String) {
