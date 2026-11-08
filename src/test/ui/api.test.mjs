@@ -62,6 +62,34 @@ test("requestJson returns null for 204", async () => {
     assert.equal(await requestJson("/api/x", { method: "DELETE" }, { root: rootWith(), fetchImpl }), null);
 });
 
+test("requestJson returns null for an empty body", async () => {
+    const fetchImpl = async () => new Response("", { status: 201 });
+    assert.equal(await requestJson("/api/x", { method: "POST" }, { root: rootWith(), fetchImpl }), null);
+});
+
+const htmlResponse = () =>
+    new Response("<html>login</html>", { status: 200, headers: { "Content-Type": "text/html" } });
+const malformedResponse = () => new Response("{", { status: 200, headers: { "Content-Type": "application/json" } });
+const followedRedirect = () => Object.defineProperty(jsonResponse(200, { ok: true }), "redirected", { value: true });
+
+for (const [name, respond] of [
+    ["an HTML page", htmlResponse],
+    ["malformed JSON", malformedResponse],
+    ["a followed redirect", followedRedirect],
+]) {
+    test(`requestJson rejects ${name} with ApiError`, async () => {
+        await assert.rejects(
+            requestJson("/api/x", {}, { root: rootWith(), fetchImpl: async () => respond() }),
+            (error) => {
+                assert.ok(error instanceof ApiError);
+                assert.equal(error.status, 200);
+                assert.equal(error.message, "요청을 처리하지 못했습니다.");
+                return true;
+            },
+        );
+    });
+}
+
 test("requestJson rejects with ApiError", async () => {
     const fetchImpl = async () => jsonResponse(409, { detail: "conflict", title: "Conflict" });
     await assert.rejects(requestJson("/api/x", {}, { root: rootWith(), fetchImpl }), (error) => {

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
 import { HtmlValidate } from "html-validate";
 import stylelint from "stylelint";
 
-const stylelintConfig = new URL("../../../config/ui/stylelint.config.mjs", import.meta.url).pathname;
-const eslintConfig = new URL("../../../config/ui/eslint.config.mjs", import.meta.url).pathname;
+const stylelintConfig = fileURLToPath(new URL("../../../config/ui/stylelint.config.mjs", import.meta.url));
+const eslintConfig = fileURLToPath(new URL("../../../config/ui/eslint.config.mjs", import.meta.url));
 const htmlConfig = JSON.parse(readFileSync(new URL("../../../config/ui/htmlvalidate.json", import.meta.url), "utf8"));
 
 const component = "/x/static/ui/components.css";
@@ -39,6 +40,7 @@ const cssCases = [
     ["a { color: var(--ui-text) !important; }", component, "declaration-no-important"],
     ['@import "x.css";', component, "at-rule-disallowed-list"],
     ['a { background: url("https://x.test/y.png"); }', component, "function-url-scheme-allowed-list"],
+    ['a { background: url("//x.test/y.png"); }', component, "function-url-no-scheme-relative"],
     [".x { --ui-accent: #123456; }", theme, "selector-disallowed-list"],
     [":root { color: #000; }", theme, "property-allowed-list"],
 ];
