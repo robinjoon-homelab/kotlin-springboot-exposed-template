@@ -12,6 +12,7 @@ data class TemplateViolation(
 
 object ThymeleafSourceRules {
     private const val UNESCAPED_INLINE = "[("
+    private const val DATA_ATTRIBUTE_PREFIX = "data-th-"
     private val layoutHeadCall = Regex("""ui/layout\s*::\s*head\b""")
     private val layoutExemptDirectories = listOf("ui/", "app/")
     private val assetElements = setOf("link", "script")
@@ -26,6 +27,7 @@ object ThymeleafSourceRules {
         source: String,
     ): List<TemplateViolation> {
         val elements = Jsoup.parse(source).allElements
+        elements.forEach(::normalizeDataAttributes)
         return mapOf(
             "inline-style" to inlineStyles(elements),
             "inline-script" to inlineScripts(elements),
@@ -35,6 +37,14 @@ object ThymeleafSourceRules {
             "post-without-th-action" to postsWithoutThAction(elements),
             "missing-layout" to missingLayout(relativePath, elements),
         ).flatMap { (rule, details) -> details.map { TemplateViolation(relativePath, rule, it) } }
+    }
+
+    // Thymeleaf treats data-th-name exactly like th:name, so renaming here lets every rule know only the th: spelling.
+    private fun normalizeDataAttributes(element: Element) {
+        element
+            .attributes()
+            .filter { it.key.startsWith(DATA_ATTRIBUTE_PREFIX) }
+            .forEach { it.setKey("th:" + it.key.removePrefix(DATA_ATTRIBUTE_PREFIX)) }
     }
 
     private fun inlineStyles(elements: Elements): List<String> =

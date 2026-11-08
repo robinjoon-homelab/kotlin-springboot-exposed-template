@@ -28,6 +28,8 @@ class ThymeleafSourceRulesTest {
             "<p th:text=\"\${x}\">x</p>",
             "<form method=\"get\"></form>",
             "<form th:action=\"@{/x}\" method=\"post\"></form>",
+            "<script data-th-src=\"@{/app/x.js}\"></script>",
+            "<form data-th-action=\"@{/x}\" method=\"post\"></form>",
         ],
     )
     fun `accepts a source that follows the rules`(source: String) {
@@ -42,6 +44,11 @@ class ThymeleafSourceRulesTest {
     @Test
     fun `accepts a page template that uses the layout head`() {
         assertThat(rulesOf("admin/x.html", LAYOUT_CALL)).isEmpty()
+    }
+
+    @Test
+    fun `accepts the layout head called through the data attribute spelling`() {
+        assertThat(rulesOf("admin/x.html", "<head data-th-replace=\"~{ui/layout :: head('x')}\"></head>")).isEmpty()
     }
 
     @ParameterizedTest
@@ -89,6 +96,11 @@ class ThymeleafSourceRulesTest {
                 arguments("<p>[(\${x})]</p>", "unescaped-output"),
                 arguments("<form method=\"post\"></form>", "post-without-th-action"),
                 arguments("<form method=\"POST\" action=\"/x\"></form>", "post-without-th-action"),
+                arguments("<p data-th-utext=\"\${x}\">x</p>", "unescaped-output"),
+                arguments("<div data-th-style=\"\${x}\"></div>", "inline-style"),
+                arguments("<a data-th-onclick=\"\${x}\">x</a>", "event-handler"),
+                arguments("<script src=\"/a.js\" data-th-inline=\"javascript\"></script>", "inline-script"),
+                arguments("<link data-th-href=\"@{https://cdn.test/x.css}\">", "external-asset"),
             )
     }
 }
