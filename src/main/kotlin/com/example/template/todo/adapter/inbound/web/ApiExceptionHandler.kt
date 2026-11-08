@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
 
-@RestControllerAdvice
+@RestControllerAdvice(assignableTypes = [TodoController::class])
 class ApiExceptionHandler : ResponseEntityExceptionHandler() {
     @ExceptionHandler(InvalidTodoTitleException::class)
     fun handleInvalidTodoTitle(exception: InvalidTodoTitleException): ProblemDetail =
