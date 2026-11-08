@@ -62,3 +62,4 @@ bash scripts/verify-runtime-image.sh my-service:local
 - 허용 필드는 `database`, `host`, `env`, `serviceAccountName`이다. **최초 생성에만 적용**하며 기존 앱의 설정 변경은 하네스에서 처리한다. 앱 이름을 바꿔 데이터 이전을 대신하지 않는다.
 - `env`에는 **교체할 전체 목록**을 쓰고 prod·DB 설정을 포함한다. URL의 DB명은 `database`와 맞추며, `DB_HOST`는 설정하지 않고 `DB_PORT`는 이를 참조하는 URL보다 먼저 선언한다.
 - 비밀값은 `secretKeyRef`로 지정한다. 참조할 Secret·ServiceAccount를 먼저 준비하고 `plan`으로 최종 설정을 확인한다.
+- 관리자 화면을 쓰는 앱은 `ADMIN_USERNAME`, `ADMIN_PASSWORD`를 `.github/deployment.json`의 `env`에 `secretKeyRef`로 추가한다. `env`는 전체 교체 목록이므로 위 prod·DB 항목도 함께 쓴다. 기존 앱은 같은 두 변수를 하네스에서 설정한다. 설정하지 않으면 앱은 기동하고 [화면은 닫힌다](frontend.md#관리자-자격과-닫힘-동작).
