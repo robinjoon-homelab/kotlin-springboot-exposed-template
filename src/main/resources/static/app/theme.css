@@ -1,6 +1,6 @@
 /*
  * App-level theme overrides. Only :root custom properties and color-scheme are allowed here,
- * so that the kit stays upgradeable without merging app styles. Uncomment to rebrand:
+ * so that the kit stays upgradeable without merging app styles. Change the value below to rebrand.
  */
 :root {
     --ui-accent: light-dark(#2457c5, #6c9bff);

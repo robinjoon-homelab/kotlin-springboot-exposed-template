@@ -23,6 +23,7 @@ export default {
         "declaration-no-important": true,
         "at-rule-disallowed-list": ["import"],
         "function-url-scheme-allowed-list": ["data"],
+        "function-url-no-scheme-relative": true,
     },
     // Globs are resolved against this config's directory unless absolute, so they start with "/".
     overrides: [

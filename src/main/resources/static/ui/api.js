@@ -25,6 +25,18 @@ export async function problemMessage(response) {
     }
 }
 
+// fetch follows the login redirect of an expired session, so a 200 can still be an HTML page.
+async function readJsonBody(response) {
+    if (response.redirected) throw new ApiError(FALLBACK_MESSAGE, response.status);
+    const text = await response.text();
+    if (text === "") return null;
+    try {
+        return JSON.parse(text);
+    } catch {
+        throw new ApiError(FALLBACK_MESSAGE, response.status);
+    }
+}
+
 export async function requestJson(url, options = {}, { root = document, fetchImpl = fetch } = {}) {
     const { body, headers, ...rest } = options;
     const init = {
@@ -40,5 +52,5 @@ export async function requestJson(url, options = {}, { root = document, fetchImp
 
     const response = await fetchImpl(url, init);
     if (!response.ok) throw new ApiError(await problemMessage(response), response.status);
-    return response.status === 204 ? null : response.json();
+    return readJsonBody(response);
 }
