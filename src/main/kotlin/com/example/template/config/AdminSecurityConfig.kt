@@ -26,7 +26,7 @@ internal const val ADMIN_LOGIN_PATH = "/admin/login"
 
 private const val MAX_LOGIN_FAILURES = 5
 private const val LOCK_MINUTES = 10L
-private val storageFormatPrefix = Regex("""^\{[^{}]+}""")
+private const val BCRYPT_PREFIX = "{bcrypt}"
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AdminSecurityProperties::class)
@@ -106,11 +106,12 @@ class AdminSecurityConfig(
     }
 }
 
+// Only bcrypt counts as stored: another {id} value kept as is would fail every login when no encoder maps that id.
 internal fun storedPassword(
     raw: String,
     encoder: PasswordEncoder,
 ): String =
-    if (storageFormatPrefix.containsMatchIn(raw)) {
+    if (raw.startsWith(BCRYPT_PREFIX)) {
         raw
     } else {
         requireNotNull(encoder.encode(raw)) { "The password encoder returned no value." }

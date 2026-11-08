@@ -2,29 +2,24 @@ package com.example.template.config
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.security.crypto.factory.PasswordEncoderFactories
 
 class AdminPasswordTest {
     private val encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder()
 
     @Test
-    fun `a value naming its storage format is kept`() {
+    fun `a bcrypt value is kept`() {
         assertThat(storedPassword("{bcrypt}abc", encoder)).isEqualTo("{bcrypt}abc")
     }
 
-    @Test
-    fun `a plain value is encoded`() {
-        val stored = storedPassword("plain", encoder)
+    @ParameterizedTest
+    @ValueSource(strings = ["plain", "{}x", "{foo}bar", "{BCRYPT}x"])
+    fun `every other value is encoded as plaintext`(raw: String) {
+        val stored = storedPassword(raw, encoder)
 
-        assertThat(stored).isNotEqualTo("plain")
-        assertThat(encoder.matches("plain", stored)).isTrue()
-    }
-
-    @Test
-    fun `empty braces do not name a storage format`() {
-        val stored = storedPassword("{}x", encoder)
-
-        assertThat(stored).isNotEqualTo("{}x")
-        assertThat(encoder.matches("{}x", stored)).isTrue()
+        assertThat(stored).isNotEqualTo(raw)
+        assertThat(encoder.matches(raw, stored)).isTrue()
     }
 }
