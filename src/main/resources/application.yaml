@@ -24,9 +24,20 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
+app:
+  admin:
+    username: ${ADMIN_USERNAME:}
+    password: ${ADMIN_PASSWORD:}
+
 server:
   port: ${PORT:8080}
   shutdown: graceful
+  servlet:
+    session:
+      tracking-modes: cookie
+      cookie:
+        http-only: true
+        same-site: lax
 
 management:
   endpoints:

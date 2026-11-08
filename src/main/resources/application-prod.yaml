@@ -5,6 +5,13 @@ spring:
     password: ${DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
 
+server:
+  forward-headers-strategy: native
+  servlet:
+    session:
+      cookie:
+        secure: true
+
 management:
   endpoint:
     health:
