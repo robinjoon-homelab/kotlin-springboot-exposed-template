@@ -1,0 +1,4 @@
+.todo-done {
+    color: var(--ui-text-muted);
+    text-decoration: line-through;
+}
