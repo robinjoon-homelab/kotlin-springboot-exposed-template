@@ -6,7 +6,6 @@ import com.example.template.adapter.inbound.web.security.LoginAttemptGuard
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.http.HttpStatus
 import org.springframework.security.authentication.AuthenticationProvider
 import org.springframework.security.authentication.LockedException
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -18,7 +17,7 @@ import org.springframework.security.provisioning.InMemoryUserDetailsManager
 import org.springframework.security.web.DefaultRedirectStrategy
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.AuthenticationFailureHandler
-import org.springframework.security.web.authentication.HttpStatusEntryPoint
+import org.springframework.security.web.authentication.Http403ForbiddenEntryPoint
 import java.time.Clock
 import java.time.Duration
 
@@ -79,7 +78,8 @@ class AdminSecurityConfig(
         if (properties.enabled) {
             configureLogin(http, GuardedAuthenticationProvider(users, encoder, guard))
         } else {
-            http.exceptionHandling { it.authenticationEntryPoint(HttpStatusEntryPoint(HttpStatus.FORBIDDEN)) }
+            // This entry point calls sendError, which reaches the error page; a bare status would leave the body empty.
+            http.exceptionHandling { it.authenticationEntryPoint(Http403ForbiddenEntryPoint()) }
         }
         return http.build()
     }
