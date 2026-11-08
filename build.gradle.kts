@@ -33,10 +33,12 @@ kotlin {
 
 val exposedVersion = "1.5.0"
 val snippetsDir = layout.buildDirectory.dir("generated-snippets")
+val renderedUiDir = layout.buildDirectory.dir("rendered-ui")
 
 dependencies {
     implementation(platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES))
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
+    implementation("org.springframework.boot:spring-boot-starter-thymeleaf")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
@@ -54,6 +56,7 @@ dependencies {
     testImplementation("org.springframework.restdocs:spring-restdocs-mockmvc")
     testImplementation("com.tngtech.archunit:archunit:1.5.1")
     testImplementation("io.mockk:mockk:1.14.11")
+    testImplementation("org.jsoup:jsoup:1.23.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     detektPlugins(project(":quality-rules"))
@@ -114,8 +117,30 @@ val uiLint =
         args.set(listOf("check"))
     }
 
+val uiHtmlCheck =
+    tasks.register<PnpmTask>("uiHtmlCheck") {
+        dependsOn("pnpmInstall", tasks.test)
+        args.set(listOf("run", "lint:html"))
+        // An empty glob passes html-validate, which would silently switch this gate off.
+        doFirst {
+            check(
+                renderedUiDir
+                    .get()
+                    .asFile
+                    .walkTopDown()
+                    .any { it.extension == "html" },
+            ) {
+                "No rendered UI pages to validate."
+            }
+        }
+    }
+
+tasks.register("uiCheck") {
+    dependsOn(uiLint, uiHtmlCheck)
+}
+
 tasks.check {
-    dependsOn("detektMain", "detektTest", ":quality-rules:test", uiLint)
+    dependsOn("detektMain", "detektTest", ":quality-rules:test", "uiCheck")
 }
 
 asciidoctorj {
@@ -136,7 +161,9 @@ tasks.withType<Test>().configureEach {
     dependsOn(tasks.ktlintCheck)
     useJUnitPlatform()
     outputs.dir(snippetsDir)
+    outputs.dir(renderedUiDir)
     systemProperty("org.springframework.restdocs.outputDir", snippetsDir.get().asFile.absolutePath)
+    systemProperty("ui.renderedOutput", renderedUiDir.get().asFile.absolutePath)
     systemProperty(
         "architecture.productionClasses",
         sourceSets.main
@@ -147,9 +174,9 @@ tasks.withType<Test>().configureEach {
 
 tasks.test {
     dependsOn("detektMain", "detektTest", ":quality-rules:test")
-    // Removed documentation tests must not leave stale snippets available to Asciidoctor.
+    // Removed tests must not leave stale snippets for Asciidoctor or stale pages for html-validate.
     doFirst {
-        delete(snippetsDir)
+        delete(snippetsDir, renderedUiDir)
     }
 }
 

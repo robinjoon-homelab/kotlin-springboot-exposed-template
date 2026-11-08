@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="brand" class="ui-brand">관리 화면</div>
+
+<nav th:fragment="items(current)" aria-label="주요 메뉴">
+    <a class="ui-nav-link" th:href="@{/admin/todos}" th:aria-current="${current == 'todos'} ? 'page'">할 일</a>
+</nav>
+
+<form th:fragment="logout" th:action="@{/admin/logout}" method="post">
+    <button class="ui-button" type="submit">로그아웃</button>
+</form>
+</body>
+</html>
