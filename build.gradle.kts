@@ -1,8 +1,11 @@
+import com.github.gradle.node.pnpm.task.PnpmInstallTask
+import com.github.gradle.node.pnpm.task.PnpmTask
 import dev.detekt.gradle.Detekt
 import dev.detekt.gradle.extensions.FailOnSeverity
 import org.asciidoctor.gradle.jvm.AsciidoctorTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jlleitschuh.gradle.ktlint.tasks.KtLintCheckTask
+import java.util.Properties
 
 plugins {
     kotlin("jvm") version "2.3.21"
@@ -11,6 +14,7 @@ plugins {
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
     id("org.asciidoctor.jvm.convert") version "4.0.5"
     id("dev.detekt") version "2.0.0-alpha.6"
+    id("com.github.node-gradle.node") version "7.1.0"
 }
 
 group = "com.example"
@@ -90,8 +94,28 @@ tasks.named<Detekt>("detekt") {
     dependsOn("detektMain", "detektTest")
 }
 
+// The versions live in a kit file so that a kit update can bring new tool versions along.
+val uiToolVersions = Properties().apply { file("config/ui/tool-versions.properties").inputStream().use(::load) }
+
+// Gradle downloads the pinned Node and pnpm, so CI and the runtime image need no Node install.
+node {
+    version.set(uiToolVersions.getProperty("node"))
+    pnpmVersion.set(uiToolVersions.getProperty("pnpm"))
+    download.set(true)
+}
+
+tasks.named<PnpmInstallTask>("pnpmInstall") {
+    args.set(listOf("--frozen-lockfile"))
+}
+
+val uiLint =
+    tasks.register<PnpmTask>("uiLint") {
+        dependsOn("pnpmInstall")
+        args.set(listOf("check"))
+    }
+
 tasks.check {
-    dependsOn("detektMain", "detektTest", ":quality-rules:test")
+    dependsOn("detektMain", "detektTest", ":quality-rules:test", uiLint)
 }
 
 asciidoctorj {
