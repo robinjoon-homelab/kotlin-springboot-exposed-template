@@ -18,6 +18,7 @@ import org.springframework.test.context.junit.jupiter.web.SpringJUnitWebConfig
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
@@ -92,6 +93,38 @@ class AdminSecurityFilterChainTest
 
             mockMvc.perform(post("/admin/probe").session(session)).andExpect(status().isForbidden)
             mockMvc.perform(post("/admin/probe").session(session).with(csrf())).andExpect(status().isOk)
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = ["/admin/login", "/admin/probe", "/admin/logout"])
+        fun `a stale session without a token goes to login`(path: String) {
+            mockMvc
+                .perform(post(path).with(requestedSession("expired-session-id", valid = false)))
+                .andExpect(status().isFound)
+                .andExpect(redirectedUrl("/admin/login"))
+        }
+
+        @Test
+        fun `a live session without a token stays forbidden`() {
+            val session = loggedInSession()
+
+            mockMvc
+                .perform(post("/admin/probe").session(session).with(requestedSession(session.id, valid = true)))
+                .andExpect(status().isForbidden)
+        }
+
+        @Test
+        fun `a request without a session cookie or a token stays forbidden`() {
+            mockMvc.perform(post("/admin/probe")).andExpect(status().isForbidden)
+        }
+
+        private fun requestedSession(
+            id: String,
+            valid: Boolean,
+        ) = RequestPostProcessor { request ->
+            request.requestedSessionId = id
+            request.isRequestedSessionIdValid = valid
+            request
         }
 
         private fun loggedInSession(): MockHttpSession =

@@ -3,6 +3,7 @@ package com.example.template.config
 import com.example.template.adapter.inbound.web.security.GuardedAuthenticationProvider
 import com.example.template.adapter.inbound.web.security.LoginAttemptEvents
 import com.example.template.adapter.inbound.web.security.LoginAttemptGuard
+import org.slf4j.LoggerFactory
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -16,6 +17,8 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.provisioning.InMemoryUserDetailsManager
 import org.springframework.security.web.DefaultRedirectStrategy
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.access.AccessDeniedHandler
+import org.springframework.security.web.access.AccessDeniedHandlerImpl
 import org.springframework.security.web.authentication.AuthenticationFailureHandler
 import org.springframework.security.web.authentication.Http403ForbiddenEntryPoint
 import java.time.Clock
@@ -26,7 +29,8 @@ internal const val ADMIN_LOGIN_PATH = "/admin/login"
 
 private const val MAX_LOGIN_FAILURES = 5
 private const val LOCK_MINUTES = 10L
-private const val BCRYPT_PREFIX = "{bcrypt}"
+
+private val log = LoggerFactory.getLogger(AdminSecurityConfig::class.java)
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AdminSecurityProperties::class)
@@ -40,6 +44,7 @@ class AdminSecurityConfig(
     @Bean
     fun adminUserDetailsService(encoder: PasswordEncoder): UserDetailsService {
         if (!properties.enabled) {
+            log.warn("Admin pages are closed: {}", properties.closedReason)
             return InMemoryUserDetailsManager()
         }
         val admin =
@@ -94,6 +99,20 @@ class AdminSecurityConfig(
             it.loginProcessingUrl(ADMIN_LOGIN_PATH)
             it.defaultSuccessUrl("/admin", false)
             it.failureHandler(redirectByFailure())
+        }
+        http.exceptionHandling { it.accessDeniedHandler(redirectStaleSessionToLogin()) }
+    }
+
+    // A form left open past the session timeout has lost its CSRF token and would otherwise end on a dead-end 403 page.
+    private fun redirectStaleSessionToLogin(): AccessDeniedHandler {
+        val redirects = DefaultRedirectStrategy()
+        val denied = AccessDeniedHandlerImpl()
+        return AccessDeniedHandler { request, response, exception ->
+            if (request.requestedSessionId != null && !request.isRequestedSessionIdValid) {
+                redirects.sendRedirect(request, response, ADMIN_LOGIN_PATH)
+            } else {
+                denied.handle(request, response, exception)
+            }
         }
     }
 
