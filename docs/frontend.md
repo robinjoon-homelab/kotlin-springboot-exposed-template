@@ -115,7 +115,7 @@ Thymeleaf 화면·공용 UI 키트·관리자 인증을 바꿀 때 읽는다. �
 | `Accept`에 `text/html`을 명시한 `/api/` 밖의 없는 경로 | 404, HTML `error/404` |
 | `Accept`가 `*/*`·JSON인 없는 경로, `/api/`로 시작하는 없는 경로 | 404, `application/problem+json` |
 | 보안 체인의 403 | 브라우저에 `error/403` |
-| 화면 경로의 잘못된 UUID(400), 잘못된 메서드(405) | 브라우저에 `error/4xx` |
+| 화면 경로의 잘못된 UUID(400), 잘못된 메서드(405) | `application/problem+json`. 앱이 만든 링크로는 발생하지 않는다 |
 | 화면 처리 중 처리되지 않은 예외 | 브라우저에 `error/5xx` |
 
 ## 키트 갱신
@@ -151,9 +151,8 @@ Thymeleaf 화면·공용 UI 키트·관리자 인증을 바꿀 때 읽는다. �
    - `tasks.check`의 `"uiCheck"`, `tasks.withType<Test>`의 `outputs.dir(renderedUiDir)`와 `systemProperty("ui.renderedOutput", ...)`
    - `tasks.test`의 `delete(snippetsDir, renderedUiDir)`는 `delete(snippetsDir)`로 바꾸고 바로 위 주석에서 html-validate 언급을 지운다.
 3. `application.yaml`에서 `app.admin`과 `server.servlet.session`을, `application-prod.yaml`에서 `server` 전체(`server.forward-headers-strategy`, `server.servlet.session`)를 지운다.
-4. `src/main/kotlin/<패키지>/todo/adapter/inbound/web/ApiExceptionHandler.kt`의 `@RestControllerAdvice(assignableTypes = [TodoController::class])`를 `@RestControllerAdvice`로 바꾼다.
-5. `.gitignore`의 `node_modules/`와 `docs/frontend.md`를 지우고, 이 문서를 가리키는 항목을 정리한다: `AGENTS.md`의 화면 변경 읽기 경로, `README.md`의 화면 항목, `docs/development.md`의 `ADMIN_*`·`uiCheck`·`build/rendered-ui/`·템플릿 적용 안내, `docs/deployment.md`의 관리자 자격, `docs/quality-maintenance.md`의 UI 검사기 절과 첫 문단의 대상, `docs/ddd-architecture.md`의 웹 어댑터·`view` 행.
-6. `./gradlew build`로 확인한다.
+4. `.gitignore`의 `node_modules/`와 `docs/frontend.md`를 지우고, 이 문서를 가리키는 항목을 정리한다: `AGENTS.md`의 화면 변경 읽기 경로, `README.md`의 화면 항목, `docs/development.md`의 `ADMIN_*`·`uiCheck`·`build/rendered-ui/`·템플릿 적용 안내, `docs/deployment.md`의 관리자 자격, `docs/quality-maintenance.md`의 UI 검사기 절과 첫 문단의 대상, `docs/ddd-architecture.md`의 웹 어댑터·`view` 행.
+5. `./gradlew build`로 확인한다.
 
 - 제거한 앱은 화면을 추가하기 전 템플릿과 같아진다. `/docs/**`는 지금과 달리 로그인 없이 공개된다.
 - `/docs/**`를 보호해야 하는 앱은 위 절차를 실행하지 않고 Security 부분을 남긴다. 로그인 화면이 Thymeleaf와 키트를 쓰므로 `config/Admin*`, `adapter/inbound/web/`, Thymeleaf·Security 의존성, `app.admin`, `server.servlet.session`, `server.forward-headers-strategy`, 키트와 `templates/app/`, `static/app/`, 대응 테스트를 유지하고 예제(`TodoPageController.kt`, `view/`, `TodoPageControllerTest.kt`, `templates/admin/`)만 지운다. `AdminWebConfig`의 `/admin` 리다이렉트 대상은 `/docs/index.html`로 바꾼다.

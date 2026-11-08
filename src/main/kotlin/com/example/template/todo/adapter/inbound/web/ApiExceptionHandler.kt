@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
 
-@RestControllerAdvice(assignableTypes = [TodoController::class])
+// The app's global handler for errors raised before a controller is chosen, such as an unsupported method.
+// It must not be narrowed: Boot's ProblemDetailsExceptionHandler backs off when any ResponseEntityExceptionHandler bean exists.
+@RestControllerAdvice
 class ApiExceptionHandler : ResponseEntityExceptionHandler() {
     @ExceptionHandler(InvalidTodoTitleException::class)
     fun handleInvalidTodoTitle(exception: InvalidTodoTitleException): ProblemDetail =
