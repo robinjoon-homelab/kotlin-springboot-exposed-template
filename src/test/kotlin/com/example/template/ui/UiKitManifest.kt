@@ -26,6 +26,9 @@ object UiKitManifest {
         )
     private val ignoredDirs = setOf("node_modules")
 
+    // Git ignores this file, so listing it would pass locally and fail as missing on a clean checkout.
+    private val ignoredFiles = setOf(".DS_Store")
+
     fun differences(root: Path): List<String> {
         val manifest = root.resolve(MANIFEST)
         if (!manifest.isRegularFile(LinkOption.NOFOLLOW_LINKS)) return listOf("missing: $MANIFEST")
@@ -66,6 +69,7 @@ object UiKitManifest {
         return Files.newDirectoryStream(directory).use { entries ->
             entries.toList().flatMap { entry ->
                 when {
+                    entry.fileName.toString() in ignoredFiles -> emptyList()
                     entry.isRegularFile(LinkOption.NOFOLLOW_LINKS) -> listOf(entry.relativeTo(root).joinToString("/"))
                     entry.isDirectory(LinkOption.NOFOLLOW_LINKS) && entry.fileName.toString() !in ignoredDirs -> filesUnder(root, entry)
                     else -> emptyList()

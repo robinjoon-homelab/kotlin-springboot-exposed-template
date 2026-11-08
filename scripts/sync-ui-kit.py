@@ -20,6 +20,8 @@ KIT_DIRS = [
 MANIFEST = "config/ui/kit.sha256"
 # Dependency installs are not kit content.
 IGNORED_DIRS = {"node_modules"}
+# Git ignores this file, so listing it would pass locally and fail as missing on a clean checkout.
+IGNORED_FILES = {".DS_Store"}
 
 
 def kit_paths(root: Path) -> list[str]:
@@ -37,7 +39,7 @@ def kit_paths(root: Path) -> list[str]:
             dirs[:] = [d for d in dirs if d not in IGNORED_DIRS and not (Path(current) / d).is_symlink()]
             for file in files:
                 path = Path(current) / file
-                if not path.is_symlink():
+                if file not in IGNORED_FILES and not path.is_symlink():
                     found.add(path.relative_to(root).as_posix())
     found.discard(MANIFEST)
     return sorted(found)
@@ -92,6 +94,12 @@ def write_target(target: Path, name: str, content: bytes) -> None:
     destination.write_bytes(content)
 
 
+def stale_kit_files(target: Path, names: list[str]) -> list[str]:
+    """Lists what sync may delete. Only the target's own manifest proves that a file came from the kit."""
+    listed = read_manifest(target) or {}
+    return sorted((set(kit_paths(target)) & set(listed)) - set(names))
+
+
 def sync(source: Path, target: Path) -> None:
     if source.resolve() == target.resolve():
         raise SystemExit("source and target are the same directory")
@@ -100,8 +108,9 @@ def sync(source: Path, target: Path) -> None:
         raise SystemExit("source kit does not match its manifest:\n" + "\n".join(problems))
     names = kit_paths(source) + [MANIFEST]
     contents = {name: (source / name).read_bytes() for name in names}
-    for name in set(kit_paths(target)) - set(names):
+    for name in stale_kit_files(target, names):
         (target / name).unlink()
+        print(f"removed: {name}")
     for name, content in contents.items():
         write_target(target, name, content)
     problems = verify_manifest(target)
